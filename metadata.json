@@ -1,0 +1,7 @@
+{
+  "name": "myparallel.chat",
+  "description": "A semi-real AI relationship experience driven by emotional modeling and voice conversation.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}

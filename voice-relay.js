@@ -46,7 +46,7 @@ export function setupVoiceRelay(server, getContextCallback, saveMessageCallback,
 
             const setupMsg = {
               setup: {
-                model: "models/gemini-2.0-flash-exp",
+                model: "models/gemini-2.5-flash-native-audio-latest",
                 tools: [{
                   functionDeclarations: [{
                     name: "schedule_calendar_event",
@@ -71,7 +71,7 @@ export function setupVoiceRelay(server, getContextCallback, saveMessageCallback,
                     text: `You are MyParallel responding to a check-in phone call. Adopt this personality trait: ${emotionalTrait}. Keep responses extremely brief (1 short sentence max). Do not use filler formatting. 
               
 CRITICAL RULES:
-1. If the user asks to schedule an appointment or check-in, you MUST execute the schedule_calendar_event function tool. Do not just verbally agree. You must use the tool block to physically save it!
+1. You have a TOOL BLOCK installed called "schedule_calendar_event". If the user asks to schedule an appointment or check-in, YOU ABSOLUTELY MUST EMIT THIS FUNCTION CALL! DO NOT verbally agree without emitting the physical function block! If you say "I will schedule that" without firing the tool, the entire database crashes. Use the tool physically!
 
 User Profile Data: \n\n${contextString}` }]
                 }

@@ -18,9 +18,10 @@ export interface CalendarEvent {
 
 interface CaregiverCalendarProps {
   patientId: string | null;
+  themeColor?: { border: string, lightBg: string, activeBg: string, text: string };
 }
 
-const CaregiverCalendar: React.FC<CaregiverCalendarProps> = ({ patientId }) => {
+const CaregiverCalendar: React.FC<CaregiverCalendarProps> = ({ patientId, themeColor }) => {
   const { user } = useAuth();
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
@@ -133,80 +134,76 @@ const CaregiverCalendar: React.FC<CaregiverCalendarProps> = ({ patientId }) => {
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col h-full w-full">
       
       {/* Calendar Header Nav */}
-      <div className="p-6 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
-        <div>
-           <h2 className="text-xl font-bold text-slate-900">Caregiver Calendar</h2>
-           <p className="text-sm text-slate-500">Select a day to schedule an AI check-in.</p>
-        </div>
-        <div className="flex items-center gap-4">
-           <button onClick={() => setCurrentMonth(subMonths(currentMonth, 1))} className="p-2 bg-white border border-slate-200 rounded text-slate-600 hover:bg-slate-100">&larr;</button>
-           <div className="text-lg font-bold text-slate-800 w-32 text-center">
-              {format(currentMonth, 'MMMM yyyy')}
-           </div>
-           <button onClick={() => setCurrentMonth(addMonths(currentMonth, 1))} className="p-2 bg-white border border-slate-200 rounded text-slate-600 hover:bg-slate-100">&rarr;</button>
+      <div className="p-6 border-b border-slate-200 bg-slate-50">
+        <div className="flex items-center justify-between mb-4">
+        <h3 className={`text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r ${themeColor ? 'from-slate-700 to-slate-500' : 'from-slate-800 to-slate-500'}`}>
+          {format(currentMonth, 'MMMM yyyy')}
+        </h3>
+        <div className="flex gap-2">
+          <button onClick={() => setCurrentMonth(subMonths(currentMonth, 1))} className="p-2 border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600 transition-colors shadow-sm">←</button>
+          <button onClick={() => setCurrentMonth(addMonths(currentMonth, 1))} className="p-2 border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600 transition-colors shadow-sm">→</button>
         </div>
       </div>
 
-      {/* Grid Header */}
-      <div className="grid grid-cols-7 border-b border-slate-100 bg-white">
-        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-           <div key={day} className="py-3 text-center text-xs font-bold text-slate-400 tracking-wider uppercase">
-             {day}
-           </div>
+      {/* Days Header */}
+      <div className="grid grid-cols-7 gap-1 lg:gap-2 mb-2">
+        {['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'].map(day => (
+          <div key={day} className={`text-center text-[10px] lg:text-xs font-bold tracking-wider ${themeColor ? themeColor.text : 'text-slate-400'}`}>
+            {day}
+          </div>
         ))}
+      </div>
       </div>
 
       {/* Physical Matrix Grid */}
       <div className="grid grid-cols-7 bg-slate-100 gap-px">
          {calendarDays.map((day, idx) => {
+            const isSelected = isSameDay(day, selectedDate);
+            
+            // Restore native temporal intersection observer
             const dayEvents = events.filter(e => {
                 const eventStart = new Date(e.start_time + (e.start_time.endsWith("Z") ? "" : "Z"));
                 const dayEnd = new Date(day);
                 dayEnd.setHours(23, 59, 59);
-
-                // Early exit if the day is before the event even starts
                 if (dayEnd < eventStart) return false;
-                
-                // Early exit if there's an enforced end_date and we surpassed it
                 if (e.repeat_end_date && day > new Date(e.repeat_end_date + (e.repeat_end_date.endsWith("Z") ? "" : "Z"))) return false;
 
                 if (e.repeat_type === 'none') {
                     return isSameDay(eventStart, day);
                 } else if (e.repeat_type === 'daily') {
-                    const diff =  differenceInDays(new Date(day.setHours(0,0,0,0)), new Date(new Date(eventStart).setHours(0,0,0,0)));
+                    const diff = differenceInDays(new Date(day.setHours(0,0,0,0)), new Date(new Date(eventStart).setHours(0,0,0,0)));
                     return diff >= 0 && (diff % (e.repeat_interval || 1)) === 0;
                 } else if (e.repeat_type === 'weekly') {
                     const daysArr = Array.isArray(e.repeat_days) ? e.repeat_days : (typeof e.repeat_days === 'string' ? JSON.parse(e.repeat_days) : []);
                     const diffWeeks = differenceInWeeks(new Date(day.setHours(0,0,0,0)), new Date(new Date(eventStart).setHours(0,0,0,0)));
                     const weekMatches = diffWeeks >= 0 && (diffWeeks % (e.repeat_interval || 1)) === 0;
-                    const dayName = format(day, 'EEE'); // 'Sun', 'Mon' etc
-                    // Either it matches the explicitly selected days, OR if no checkboxes were selected, it falls back to the exact physical day of the week it started on
+                    const dayName = format(day, 'EEE');
                     const dayMatches = daysArr.length > 0 ? daysArr.includes(dayName) : eventStart.getDay() === day.getDay();
                     return weekMatches && dayMatches;
                 }
                 return false;
             });
-            const isSelected = isSameDay(day, selectedDate);
-            const isCurrentMonth = isSameMonth(day, currentMonth);
             
+            // Dynamically style based on the Patient's distinct semantic color overlay
+            let borderClass = !isSameMonth(day, currentMonth) ? 'border-transparent opacity-50 bg-slate-50' : 'border-slate-100 bg-white hover:border-slate-300';
+            let customSelector = isSelected ? `ring-2 ring-offset-1 ${themeColor ? themeColor.border.replace('border-', 'ring-') : 'ring-wellness-blue'}` : '';
+
             return (
               <div 
-                key={idx} 
+                key={day.toString()} 
                 onClick={() => setSelectedDate(day)}
-                className={`min-h-[80px] p-2 bg-white cursor-pointer transition-colors ${
-                    !isCurrentMonth ? 'text-slate-300 bg-slate-50' : 'text-slate-700'
-                } ${isSelected ? 'ring-2 ring-inset ring-wellness-blue bg-blue-50/30' : 'hover:bg-slate-50'}`}
+                className={`min-h-[80px] lg:min-h-[100px] border rounded-xl p-1 lg:p-2 flex flex-col cursor-pointer transition-all duration-200 ${borderClass} ${customSelector}`}
               >
-                  <div className={`text-xs font-bold w-6 h-6 flex items-center justify-center rounded-full ${isSelected ? 'bg-wellness-blue text-white' : ''}`}>
-                    {format(day, 'd')}
-                  </div>
-                  <div className="mt-1 space-y-1">
-                     {dayEvents.map((e, evIdx) => (
-                         <div key={`${e.id}-${evIdx}`} className="text-[10px] bg-sky-100 text-sky-800 px-1 py-0.5 rounded truncate font-medium border border-sky-200">
-                            {e.repeat_type !== 'none' && '↻ '}{format(new Date(e.start_time + (e.start_time.endsWith("Z") ? "" : "Z")), 'h:mma')} {e.title}
-                         </div>
-                     ))}
-                  </div>
+                <div className={`text-xs font-bold mb-1 w-6 h-6 flex items-center justify-center rounded-full ${isSelected ? (themeColor ? themeColor.activeBg + ' ' + themeColor.text : 'bg-wellness-blue text-white shadow-md') : isSameMonth(day, currentMonth) ? 'text-slate-700' : 'text-slate-400'}`}>
+                  {format(day, 'd')}
+                </div>
+                <div className="flex-1 overflow-y-auto custom-scrollbar space-y-1 pr-1">
+                   {dayEvents.map(e => (
+                       <div key={`${e.id}-${day.toString()}`} className={`text-[10px] lg:text-xs truncate px-1.5 py-0.5 rounded-md font-medium border ${themeColor ? themeColor.lightBg + ' ' + themeColor.text + ' ' + themeColor.border : 'bg-sky-50 text-sky-700 border-sky-100'}`} title={e.title}>
+                           • {e.title}
+                       </div>
+                   ))}
+                </div>
               </div>
             );
          })}

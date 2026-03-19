@@ -13,6 +13,14 @@ interface ChatMessage {
   mediaUrl?: string;
 }
 
+const PATIENT_COLORS = [
+  { border: 'border-blue-500', lightBg: 'bg-blue-50', activeBg: 'bg-blue-100', text: 'text-blue-700' },
+  { border: 'border-emerald-500', lightBg: 'bg-emerald-50', activeBg: 'bg-emerald-100', text: 'text-emerald-700' },
+  { border: 'border-amber-500', lightBg: 'bg-amber-50', activeBg: 'bg-amber-100', text: 'text-amber-700' },
+  { border: 'border-purple-500', lightBg: 'bg-purple-50', activeBg: 'bg-purple-100', text: 'text-purple-700' },
+  { border: 'border-rose-500', lightBg: 'bg-rose-50', activeBg: 'bg-rose-100', text: 'text-rose-700' },
+];
+
 const WebTerminal: React.FC = () => {
   const { user } = useAuth();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -31,6 +39,7 @@ const WebTerminal: React.FC = () => {
   
   const [patients, setPatients] = useState<any[]>([]);
   const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
+  const [upcomingEvents, setUpcomingEvents] = useState<any[]>([]);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const UPLINK_URL = import.meta.env.DEV ? 'http://localhost:8081' : '';
@@ -52,7 +61,7 @@ const WebTerminal: React.FC = () => {
     fetchProfiles();
   }, [user]);
 
-  // Synchronize active patient context
+  // Synchronize active patient context and calendar injection
   useEffect(() => {
       if (patients.length > 0 && selectedPatientId) {
           const p = patients.find(x => x.id === selectedPatientId);
@@ -60,6 +69,19 @@ const WebTerminal: React.FC = () => {
               setPhoneNumber(p.phone_number);
               setPersonality(p.selected_personality);
           }
+
+          // Fetch explicit calendar events to inject into Voice AI memory
+          const fetchAgentCalendar = async () => {
+             const yesterday = new Date(Date.now() - 24*60*60*1000).toISOString();
+             const tomorrow = new Date(Date.now() + 2*24*60*60*1000).toISOString();
+             const { data } = await supabase.from('calendar_events')
+                 .select('*')
+                 .eq('user_id', selectedPatientId)
+                 .gte('start_time', yesterday)
+                 .lte('start_time', tomorrow);
+             setUpcomingEvents(data || []);
+          };
+          fetchAgentCalendar();
       }
   }, [patients, selectedPatientId]);
 
@@ -201,10 +223,18 @@ const WebTerminal: React.FC = () => {
 
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
-  const downloadLog = () => {
+  const downloadLog = async () => {
       const activePatient = patients.find(p => p.id === selectedPatientId);
       const name = activePatient?.full_name?.split(' ')[0] || 'Patient';
-      const logContent = messages.map(m => `[${m.time}] ${m.sender.toUpperCase()}:\n${m.text}`).join('\n\n-----------------\n\n');
+      
+      // Bypass the 20-message UI limit by natively polling the entire DB history
+      const { data } = await supabase.from('messages').select('*').eq('user_number', phoneNumber).order('created_at', { ascending: true });
+      if (!data || data.length === 0) {
+          alert("No transcript history available to download.");
+          return;
+      }
+
+      const logContent = data.map(m => `[${new Date(m.created_at + (m.created_at.endsWith("Z") ? "" : "Z")).toLocaleString()}] ${m.sender.toUpperCase()}:\n${m.content}`).join('\n\n-----------------\n\n');
       const blob = new Blob([logContent], { type: 'text/plain' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -264,18 +294,21 @@ const WebTerminal: React.FC = () => {
              
              {/* Roster List */}
              <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden divide-y divide-slate-100 max-h-[70vh] overflow-y-auto custom-scrollbar">
-                {patients.map(p => (
-                   <div key={p.id} onClick={() => setSelectedPatientId(p.id)} className={`p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between cursor-pointer hover:bg-slate-50 transition-colors gap-4 ${selectedPatientId === p.id ? 'bg-sky-50 border-l-4 border-wellness-blue' : ''}`}>
+                {patients.map((p, idx) => {
+                   const colorTheme = PATIENT_COLORS[idx % PATIENT_COLORS.length];
+                   const isActive = selectedPatientId === p.id;
+                   return (
+                   <div key={p.id} onClick={() => setSelectedPatientId(p.id)} className={`p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between cursor-pointer transition-all gap-4 border-l-8 ${isActive ? colorTheme.activeBg + ' ' + colorTheme.border : 'bg-white border-transparent hover:bg-slate-50 border-l-4 hover:' + colorTheme.border}`}>
                        <div className="flex-1">
-                           <div className="font-bold text-slate-800 text-lg">{p.full_name || 'Unnamed'}</div>
-                           <div className="text-xs text-slate-500 flex items-center gap-2 mt-1">
+                           <div className={`font-bold text-lg ${isActive ? colorTheme.text : 'text-slate-800'}`}>{p.full_name || 'Unnamed'}</div>
+                           <div className={`text-xs flex items-center gap-2 mt-1 ${isActive ? colorTheme.text : 'text-slate-500'}`}>
                                <span>📞 {p.phone_number || 'No Phone'}</span>
                            </div>
                        </div>
                        <div className="flex items-center gap-3 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
                            <button 
                                onClick={(e) => { e.stopPropagation(); setEditingPatientId(p.id); setShowIntake(true); }} 
-                               className="px-3 py-1.5 bg-slate-100 rounded-lg text-xs text-slate-600 font-bold hover:bg-slate-200 transition-colors whitespace-nowrap"
+                               className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors whitespace-nowrap ${isActive ? 'bg-white/50 hover:bg-white text-slate-800' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'}`}
                            >
                                ✏️ Edit
                            </button>
@@ -286,16 +319,17 @@ const WebTerminal: React.FC = () => {
                                🗑️ Delete
                            </button>
                        </div>
-                       {selectedPatientId === p.id && (
+                       {isActive && (
                            <button 
                                onClick={(e) => { e.stopPropagation(); setShowJournalDrawer(true); }}
-                               className="mt-3 sm:mt-0 w-full sm:w-auto text-center px-4 py-2 bg-wellness-blue text-white rounded-xl text-sm font-bold shadow-md hover:bg-sky-600 transition-all transform hover:scale-105"
+                               className={`mt-3 sm:mt-0 w-full sm:w-auto text-center px-4 py-2 text-white rounded-xl text-sm font-bold shadow-md transition-all transform hover:scale-105 bg-slate-900 border border-slate-700`}
                            >
                                💬 Open Journal
                            </button>
                        )}
                    </div>
-                ))}
+                   );
+                })}
                 {patients.length === 0 && (
                    <div className="p-8 text-center text-slate-400 text-sm">No patients found. Create one above!</div>
                 )}
@@ -304,17 +338,24 @@ const WebTerminal: React.FC = () => {
 
           {/* RIGHT COLUMN: Calendar (2/3 Width) */}
           <div className="w-full lg:w-[65%]">
-             <div className="bg-white rounded-3xl shadow-sm border border-slate-200 p-2 sm:p-6 lg:p-8 h-full custom-scrollbar">
-                 <div className="mb-6">
+             <div className="bg-white rounded-3xl shadow-sm border border-slate-200 p-2 sm:p-6 lg:p-8 h-full custom-scrollbar relative overflow-hidden">
+                 {/* Color Banner */}
+                 {selectedPatientId && (
+                     <div className={`absolute top-0 left-0 w-full h-2 ${PATIENT_COLORS[patients.findIndex(p => p.id === selectedPatientId) % PATIENT_COLORS.length].lightBg} border-b ${PATIENT_COLORS[patients.findIndex(p => p.id === selectedPatientId) % PATIENT_COLORS.length].border}`}></div>
+                 )}
+                 <div className="mb-6 mt-2">
                      <h2 className="text-2xl font-bold text-slate-800">Schedule & Calendar</h2>
                      {selectedPatientId ? (
-                         <p className="text-sm text-green-600 font-bold mt-1">✓ Viewing strictly filtered schedule for selected patient.</p>
+                         <p className={`text-sm font-bold mt-1 ${PATIENT_COLORS[patients.findIndex(p => p.id === selectedPatientId) % PATIENT_COLORS.length].text}`}>✓ Syncing schedule for {patients.find(p => p.id === selectedPatientId)?.full_name}</p>
                      ) : (
                          <p className="text-sm text-slate-500 mt-1">Select a patient on the left to filter events, or view your global schedule.</p>
                      )}
                  </div>
                  <div className="overflow-x-auto pb-4">
-                     <CaregiverCalendar patientId={selectedPatientId} />
+                     <CaregiverCalendar 
+                        patientId={selectedPatientId} 
+                        themeColor={selectedPatientId ? PATIENT_COLORS[patients.findIndex(p => p.id === selectedPatientId) % PATIENT_COLORS.length] : undefined}
+                     />
                  </div>
              </div>
           </div>
@@ -370,6 +411,9 @@ USER PROFILE CONTEXT:
 - Emergency Contact: ${patients.find(p => p.id === selectedPatientId)?.emergency_contact_name || 'None'}
 - Caregiver: ${patients.find(p => p.id === selectedPatientId)?.caregiver_name || 'Assigned Caregiver'}
 - Notes: ${patients.find(p => p.id === selectedPatientId)?.notes || 'None'}
+
+UPCOMING CAREGIVER CALENDAR APPOINTMENTS:
+${upcomingEvents.length > 0 ? upcomingEvents.map(e => `- ${new Date(e.start_time).toLocaleString()}: ${e.title} (${e.description})`).join('\n') : 'No upcoming appointments scheduled.'}
                       `}
                   />
               </div>

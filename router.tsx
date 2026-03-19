@@ -14,7 +14,7 @@ import OnboardingWizard from './components/OnboardingWizard';
 import CompanionReady from './components/CompanionReady';
 import PrivacyPolicy from './components/PrivacyPolicy';
 import TermsOfService from './components/TermsOfService';
-import EditProfileModal from './components/EditProfileModal';
+import CaregiverProfileModal from './components/CaregiverProfileModal';
 import PatientPortal from './components/PatientPortal';
 import AdminPortal from './components/AdminPortal';
 import { supabase } from './utils/supabase';
@@ -173,7 +173,7 @@ const AppContent: React.FC = () => {
         )}
       </main>
       
-      {isEditing && <EditProfileModal onClose={() => setIsEditing(false)} />}
+      {isEditing && <CaregiverProfileModal onClose={() => setIsEditing(false)} />}
     </div>
   );
 };

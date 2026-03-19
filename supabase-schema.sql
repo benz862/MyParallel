@@ -95,6 +95,39 @@ CREATE TABLE IF NOT EXISTS resource_deliveries (
 -- Enable Row Level Security
 ALTER TABLE resource_deliveries ENABLE ROW LEVEL SECURITY;
 
+-- Phase 26: B2B Agency & Multi-Tenancy Architecture
+CREATE TABLE IF NOT EXISTS agencies (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name TEXT NOT NULL,
+    contact_email TEXT,
+    stripe_customer_id TEXT,
+    stripe_subscription_id TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS agency_users (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    agency_id UUID REFERENCES agencies(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    role TEXT NOT NULL CHECK (role IN ('owner', 'admin', 'caregiver')),
+    status TEXT DEFAULT 'active' CHECK (status IN ('active', 'paused')),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE(agency_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS agency_entitlements (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    agency_id UUID REFERENCES agencies(id) ON DELETE CASCADE,
+    patient_limit INTEGER DEFAULT 3,
+    caregiver_limit INTEGER DEFAULT 2,
+    tier_name TEXT DEFAULT 'starter',
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Modify user_profiles (Patients) to link directly to an Agency and specific Caregiver
+ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS agency_id UUID REFERENCES agencies(id) ON DELETE CASCADE;
+ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS caregiver_id UUID REFERENCES auth.users(id) ON DELETE SET NULL;
+
 -- Create policy to allow all operations (can be locked down later)
 CREATE POLICY "allow_all" ON resource_deliveries
   FOR ALL

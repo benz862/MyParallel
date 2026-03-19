@@ -16,6 +16,8 @@ import PrivacyPolicy from './components/PrivacyPolicy';
 import TermsOfService from './components/TermsOfService';
 import EditProfileModal from './components/EditProfileModal';
 import PatientPortal from './components/PatientPortal';
+import AdminPortal from './components/AdminPortal';
+import { supabase } from './utils/supabase';
 
 // Protected Route Component
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -110,6 +112,23 @@ const Homepage: React.FC = () => {
 const AppContent: React.FC = () => {
   const { user, signOut, hasCompletedOnboarding } = useAuth();
   const [isEditing, setIsEditing] = React.useState(false);
+  const [agencyAdminData, setAgencyAdminData] = React.useState<{ companyName: string, agencyId: string } | null>(null);
+
+  React.useEffect(() => {
+     if (user) {
+        supabase.from('agency_users')
+          .select('role, agency_id, agencies(name)')
+          .eq('user_id', user.id)
+          .eq('status', 'active')
+          .maybeSingle()
+          .then(({ data }) => {
+              // Ensure agencies exists since it's a join to prevent null pointer exceptions
+              if (data && data.agencies && (data.role === 'admin' || data.role === 'owner')) {
+                 setAgencyAdminData({ companyName: data.agencies.name || 'Agency Admin', agencyId: data.agency_id });
+              }
+          });
+     }
+  }, [user]);
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col">
@@ -144,8 +163,14 @@ const AppContent: React.FC = () => {
           </div>
         </div>
       </header>
-      <main className="flex-1">
-        <WebTerminal />
+      <main className="flex-1 bg-slate-50">
+        {agencyAdminData ? (
+            <div className="py-12 px-4 sm:px-6 lg:px-8 max-w-[1400px] mx-auto min-h-[80vh]">
+                <AdminPortal companyName={agencyAdminData.companyName} agencyId={agencyAdminData.agencyId} />
+            </div>
+        ) : (
+            <WebTerminal />
+        )}
       </main>
       
       {isEditing && <EditProfileModal onClose={() => setIsEditing(false)} />}

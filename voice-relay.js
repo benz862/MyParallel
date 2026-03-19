@@ -124,7 +124,17 @@ User Profile Data: \n\n${contextString}` }] }
                                   turnComplete: true
                                }
                             };
-                            geminiWs.send(JSON.stringify(responsePayload));
+                            try {
+                                if (geminiWs.readyState === 1) { // WebSocket.OPEN is 1
+                                   geminiWs.send(JSON.stringify(responsePayload));
+                                } else {
+                                   console.warn(`[Proxy WARNING] Gemini WS is not OPEN (state: ${geminiWs.readyState}). Dropping responsePayload.`);
+                                }
+                            } catch (err) {
+                                console.error("[Proxy FATAL] Synchronous send crash intercepted:", err);
+                            }
+                        }).catch(e => {
+                            console.error("[Proxy ERROR] scheduleEventCallback promise chain rejected natively:", e);
                         });
                     }
                 }

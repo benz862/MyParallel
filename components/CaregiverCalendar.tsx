@@ -89,7 +89,7 @@ const CaregiverCalendar: React.FC<CaregiverCalendarProps> = ({ patientId }) => {
 
         if (insertError) throw insertError;
         
-        setEvents((prev) => [...prev, data].sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime()));
+        setEvents((prev) => [...prev, data].sort((a, b) => new Date(a.start_time + (a.start_time.endsWith("Z") ? "" : "Z")).getTime() - new Date(b.start_time + (b.start_time.endsWith("Z") ? "" : "Z")).getTime()));
         setIsAdding(false);
         setTitle('');
         setDescription('');
@@ -127,7 +127,7 @@ const CaregiverCalendar: React.FC<CaregiverCalendarProps> = ({ patientId }) => {
   const endDate = endOfWeek(monthEnd);
   const calendarDays = eachDayOfInterval({ start: startDate, end: endDate });
 
-  const selectedDateEvents = events.filter(e => isSameDay(new Date(e.start_time), selectedDate));
+  const selectedDateEvents = events.filter(e => isSameDay(new Date(e.start_time + (e.start_time.endsWith("Z") ? "" : "Z")), selectedDate));
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col h-full w-full">
@@ -160,7 +160,7 @@ const CaregiverCalendar: React.FC<CaregiverCalendarProps> = ({ patientId }) => {
       <div className="grid grid-cols-7 bg-slate-100 gap-px">
          {calendarDays.map((day, idx) => {
             const dayEvents = events.filter(e => {
-                const eventStart = new Date(e.start_time);
+                const eventStart = new Date(e.start_time + (e.start_time.endsWith("Z") ? "" : "Z"));
                 const dayEnd = new Date(day);
                 dayEnd.setHours(23, 59, 59);
 
@@ -168,7 +168,7 @@ const CaregiverCalendar: React.FC<CaregiverCalendarProps> = ({ patientId }) => {
                 if (dayEnd < eventStart) return false;
                 
                 // Early exit if there's an enforced end_date and we surpassed it
-                if (e.repeat_end_date && day > new Date(e.repeat_end_date)) return false;
+                if (e.repeat_end_date && day > new Date(e.repeat_end_date + (e.repeat_end_date.endsWith("Z") ? "" : "Z"))) return false;
 
                 if (e.repeat_type === 'none') {
                     return isSameDay(eventStart, day);
@@ -203,7 +203,7 @@ const CaregiverCalendar: React.FC<CaregiverCalendarProps> = ({ patientId }) => {
                   <div className="mt-1 space-y-1">
                      {dayEvents.map((e, evIdx) => (
                          <div key={`${e.id}-${evIdx}`} className="text-[10px] bg-sky-100 text-sky-800 px-1 py-0.5 rounded truncate font-medium border border-sky-200">
-                            {e.repeat_type !== 'none' && '↻ '}{format(new Date(e.start_time), 'h:mma')} {e.title}
+                            {e.repeat_type !== 'none' && '↻ '}{format(new Date(e.start_time + (e.start_time.endsWith("Z") ? "" : "Z")), 'h:mma')} {e.title}
                          </div>
                      ))}
                   </div>
@@ -302,7 +302,7 @@ const CaregiverCalendar: React.FC<CaregiverCalendarProps> = ({ patientId }) => {
                 {selectedDateEvents.map(event => (
                    <div key={event.id} className="bg-white p-4 border border-slate-200 rounded-xl flex items-start gap-4">
                       <div className="bg-sky-50 text-wellness-blue font-bold px-3 py-2 rounded border border-sky-100 text-sm">
-                          {format(new Date(event.start_time), 'h:mm a')}
+                          {format(new Date(event.start_time + (event.start_time.endsWith("Z") ? "" : "Z")), 'h:mm a')}
                       </div>
                       <div className="flex-1">
                           <h4 className="font-bold text-slate-800 flex items-center gap-2">

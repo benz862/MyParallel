@@ -81,7 +81,7 @@ const WebTerminal: React.FC = () => {
                     const dbMessages: ChatMessage[] = data.map((m: any) => ({
                         sender: m.sender === 'user' ? 'user' : (m.sender === 'system' ? 'system' : 'ai'),
                         text: m.content || (m.media_url ? '[Photo Sent]' : ''),
-                        time: new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                        time: new Date(m.created_at + (m.created_at.endsWith("Z") ? "" : "Z")).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
                         mediaUrl: m.media_url
                     }));
                     setMessages(dbMessages);

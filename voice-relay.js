@@ -19,6 +19,7 @@ export function setupVoiceRelay(server, getContextCallback, saveMessageCallback,
       if (msg.event === "start") {
         streamSid = msg.start.streamSid;
         const userNumber = msg.start.customParameters?.userNumber;
+        console.log(`[Proxy] Twilio Socket Started for userNumber: ${userNumber}`);
         let contextString = "";
         let voiceId = "Puck";
         let emotionalTrait = "Empathetic and warm";
@@ -26,10 +27,13 @@ export function setupVoiceRelay(server, getContextCallback, saveMessageCallback,
         
         if (userNumber && getContextCallback) {
             const contextData = await getContextCallback(userNumber);
-            if (contextData) {
+            if (contextData && contextData.contextString) {
                contextString = contextData.contextString || "";
                voiceId = contextData.voiceId || "Puck";
                emotionalTrait = contextData.emotionalTrait || "Empathetic and warm";
+               console.log(`[Proxy] Successfully hydrated patient context for: ${userNumber}`);
+            } else {
+               console.warn(`[Proxy WARNING] No patient found in DB for raw Twilio number: ${userNumber}`);
             }
         }
 
@@ -97,29 +101,34 @@ User Profile Data: \n\n${contextString}` }] }
             for (const part of response.serverContent.modelTurn.parts) {
               
               if (part.functionCall) {
-                  const call = part.functionCall;
-                  if (call.name === "schedule_calendar_event") {
-                      console.log("[Gemini Twilio] Native Function Call interjection detected:", call.args);
-                      // Pause execution, trigger DB injection natively through central monolith proxy
-                      scheduleEventCallback(userNumber, call.args.title, call.args.description, call.args.start_time).then(success => {
-                          geminiWs.send(JSON.stringify({
-                              clientContent: {
+                console.log("[Proxy] RAW GENAI FUNCTION CALL INTERCEPTED:", JSON.stringify(part.functionCall));
+                if (part.functionCall.name === 'schedule_calendar_event') {
+                    const call = part.functionCall;
+                    if (scheduleEventCallback) {
+                        console.log(`[Proxy] Executing backend scheduleEventCallback for ${userNumber}...`, call.args);
+                        // Pass to backend, userNumber is tied to the current socket connection
+                        scheduleEventCallback(userNumber, call.args.title, call.args.description, call.args.start_time).then(success => {
+                            console.log(`[Proxy] DB Insert Result: ${success} -> Sending functionResponse to Gemini...`);
+                            const responsePayload = {
+                               clientContent: {
                                   turns: [{
                                       role: "user",
-                                      parts: [{
-                                          functionResponse: {
-                                              name: "schedule_calendar_event",
-                                              response: { success: success ? "Successfully isolated and scheduled" : "Database rejection" }
-                                          }
+                                      parts: [{ 
+                                          functionResponse: { 
+                                              id: call.id || undefined, // strictly require ID for GenAI stability if provided
+                                              name: "schedule_calendar_event", 
+                                              response: success ? { status: "success", detail: "Appointment securely saved." } : { status: "error", detail: "Database rejection. User profile not found." } 
+                                          } 
                                       }]
                                   }],
                                   turnComplete: true
-                              }
-                          }));
-                      });
-                  }
+                               }
+                            };
+                            geminiWs.send(JSON.stringify(responsePayload));
+                        });
+                    }
+                }
               }
-
               if (part.text) {
                   aiTranscriptBuffer += part.text;
               }

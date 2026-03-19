@@ -39,7 +39,8 @@ export function setupVoiceRelay(server, getContextCallback, saveMessageCallback,
             }
           }
 
-          geminiWs = new WebSocket(`${GEMINI_WS_URL}?key=${process.env.GEMINI_API_KEY}`);
+          const aiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+          geminiWs = new WebSocket(`${GEMINI_WS_URL}?key=${aiKey}`);
 
           geminiWs.on("open", () => {
             console.log(`[WebRTC] Gemini Stream Connected. Forcing Voice: ${voiceId}`);

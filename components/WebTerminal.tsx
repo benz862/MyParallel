@@ -25,6 +25,8 @@ const WebTerminal: React.FC = () => {
   const [personality, setPersonality] = useState<string | null>(null);
   const [showBrowserVoice, setShowBrowserVoice] = useState(false);
   const [showIntake, setShowIntake] = useState(false);
+  const [showJournalDrawer, setShowJournalDrawer] = useState(false);
+  const [showBulkUpload, setShowBulkUpload] = useState(false);
   const [editingPatientId, setEditingPatientId] = useState<string | null>(null);
   
   const [patients, setPatients] = useState<any[]>([]);
@@ -226,110 +228,140 @@ const WebTerminal: React.FC = () => {
   }
 
   return (
-    <section id="terminal" className="py-24 bg-white relative border-t border-slate-200">
-      <div className="container mx-auto px-6 max-w-6xl">
-        <div className="flex flex-col lg:flex-row gap-12 items-start">
+    <section id="terminal" className="py-12 lg:py-24 bg-slate-50 relative border-t border-slate-200 min-h-screen">
+      <div className="container mx-auto px-4 lg:px-8 max-w-[1400px]">
+        <div className="flex flex-col lg:flex-row gap-8 items-start relative">
           
-          <div className="flex-1 space-y-6 w-full max-w-md">
-             <div className="flex justify-between items-center bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+          {/* LEFT COLUMN: Roster (1/3 Width) */}
+          <div className="w-full lg:w-[35%] space-y-6">
+             <div className="flex justify-between items-center bg-white p-6 rounded-3xl shadow-sm border border-slate-200">
                <div>
                  <h2 className="text-2xl font-bold text-slate-800">Your Patients</h2>
                  <p className="text-sm text-slate-500">Manage your linked companions</p>
                </div>
-               <button 
-                  onClick={() => { setEditingPatientId(null); setShowIntake(true); }} 
-                  className="px-4 py-2 bg-wellness-blue text-white rounded-xl text-sm font-bold shadow hover:bg-sky-600 transition-colors"
-               >
-                  + Add New Patient
-               </button>
+               <div className="flex flex-col gap-2">
+                   <button 
+                      onClick={() => { setEditingPatientId(null); setShowIntake(true); }} 
+                      className="px-4 py-2 bg-wellness-blue text-white rounded-xl text-sm font-bold shadow hover:bg-sky-600 transition-colors"
+                   >
+                      + Add New
+                   </button>
+                   <button 
+                      onClick={() => setShowBulkUpload(!showBulkUpload)} 
+                      className="px-4 py-1.5 bg-slate-100 text-slate-600 border border-slate-200 rounded-lg text-xs font-bold hover:bg-slate-200 transition-colors"
+                   >
+                      {showBulkUpload ? 'Close Import' : '📦 Bulk Import'}
+                   </button>
+               </div>
              </div>
+
+             {/* Dynamic Bulk Upload Accordion */}
+             {showBulkUpload && (
+                 <div className="bg-white p-6 rounded-3xl shadow-sm border border-indigo-100 animate-fadeIn">
+                     <BulkPatientUploader />
+                 </div>
+             )}
              
-             <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden divide-y divide-slate-100">
+             {/* Roster List */}
+             <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden divide-y divide-slate-100 max-h-[70vh] overflow-y-auto custom-scrollbar">
                 {patients.map(p => (
-                   <div key={p.id} onClick={() => setSelectedPatientId(p.id)} className={`p-5 flex items-center justify-between cursor-pointer hover:bg-slate-50 transition-colors ${selectedPatientId === p.id ? 'bg-sky-50 border-l-4 border-wellness-blue' : ''}`}>
-                       <div>
+                   <div key={p.id} onClick={() => setSelectedPatientId(p.id)} className={`p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between cursor-pointer hover:bg-slate-50 transition-colors gap-4 ${selectedPatientId === p.id ? 'bg-sky-50 border-l-4 border-wellness-blue' : ''}`}>
+                       <div className="flex-1">
                            <div className="font-bold text-slate-800 text-lg">{p.full_name || 'Unnamed'}</div>
                            <div className="text-xs text-slate-500 flex items-center gap-2 mt-1">
                                <span>📞 {p.phone_number || 'No Phone'}</span>
                            </div>
                        </div>
-                       <div className="flex items-center gap-4">
+                       <div className="flex items-center gap-3 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
                            <button 
                                onClick={(e) => { e.stopPropagation(); setEditingPatientId(p.id); setShowIntake(true); }} 
-                               className="text-xs text-slate-400 font-bold hover:text-wellness-blue flex items-center gap-1"
+                               className="px-3 py-1.5 bg-slate-100 rounded-lg text-xs text-slate-600 font-bold hover:bg-slate-200 transition-colors whitespace-nowrap"
                            >
                                ✏️ Edit
                            </button>
                            <button 
                                onClick={(e) => handleDeletePatient(e, p.id)} 
-                               className="text-xs text-red-300 font-bold hover:text-red-600 flex items-center gap-1 transition-colors"
+                               className="px-3 py-1.5 bg-red-50 rounded-lg text-xs text-red-500 font-bold hover:bg-red-100 transition-colors whitespace-nowrap"
                            >
                                🗑️ Delete
                            </button>
-                           {selectedPatientId === p.id && (
-                               <span className="text-xs text-sky-600 font-bold bg-sky-100 px-3 py-1 rounded-full">Viewing Journal →</span>
-                           )}
                        </div>
+                       {selectedPatientId === p.id && (
+                           <button 
+                               onClick={(e) => { e.stopPropagation(); setShowJournalDrawer(true); }}
+                               className="mt-3 sm:mt-0 w-full sm:w-auto text-center px-4 py-2 bg-wellness-blue text-white rounded-xl text-sm font-bold shadow-md hover:bg-sky-600 transition-all transform hover:scale-105"
+                           >
+                               💬 Open Journal
+                           </button>
+                       )}
                    </div>
                 ))}
                 {patients.length === 0 && (
                    <div className="p-8 text-center text-slate-400 text-sm">No patients found. Create one above!</div>
                 )}
              </div>
+          </div>
 
-             <div className="mt-8 pt-4 border-t border-slate-200">
-                <BulkPatientUploader />
-             </div>
-
-             <div className="mt-8 pt-4 border-t border-slate-200">
-                <CaregiverCalendar patientId={selectedPatientId} />
+          {/* RIGHT COLUMN: Calendar (2/3 Width) */}
+          <div className="w-full lg:w-[65%]">
+             <div className="bg-white rounded-3xl shadow-sm border border-slate-200 p-2 sm:p-6 lg:p-8 h-full custom-scrollbar">
+                 <div className="mb-6">
+                     <h2 className="text-2xl font-bold text-slate-800">Schedule & Calendar</h2>
+                     {selectedPatientId ? (
+                         <p className="text-sm text-green-600 font-bold mt-1">✓ Viewing strictly filtered schedule for selected patient.</p>
+                     ) : (
+                         <p className="text-sm text-slate-500 mt-1">Select a patient on the left to filter events, or view your global schedule.</p>
+                     )}
+                 </div>
+                 <div className="overflow-x-auto pb-4">
+                     <CaregiverCalendar patientId={selectedPatientId} />
+                 </div>
              </div>
           </div>
 
-          <div className="flex-1 w-full max-w-xl">
-            {/* Journal UI */}
-            <div className="bg-white border-2 border-slate-100 rounded-3xl shadow-xl overflow-hidden min-h-[500px] flex flex-col">
-                  {/* Header */}
-                  <div className="bg-slate-50 px-6 py-4 border-b border-slate-100 flex justify-between items-center">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-wellness-blue flex items-center justify-center text-white font-bold">P</div>
-                      <div>
-                          <div className="font-bold text-slate-800 text-sm">Parallel Support</div>
-                          <div className="text-xs text-green-600 flex items-center gap-1">
-                              <span className="w-2 h-2 bg-green-500 rounded-full"></span> Online
-                          </div>
-                      </div>
-                    </div>
-                    <div>
-                      <button 
-                        onClick={downloadLog}
-                        className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-bold shadow-sm transition-colors mr-3"
-                      >
-                          📄 Export .TXT Log
-                      </button>
-                      <button 
-                        onClick={() => setShowBrowserVoice(!showBrowserVoice)}
-                        className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-bold shadow-sm transition-colors mr-3"
-                      >
-                          {showBrowserVoice ? 'Close Live Audio' : '🎙️ Live Browser Chat'}
-                      </button>
-                      <button 
-                        onClick={triggerCall}
-                        disabled={isCalling}
-                        className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-full text-sm font-bold shadow-sm transition-colors mb-2 sm:mb-0"
-                      >
-                          {isCalling ? 'Dialing...' : '📞 Call Me Now'}
-                      </button>
-                    </div>
-                  </div>
+        </div>
+      </div>
 
-                  {/* Gemini Live WebRTC Module */}
-                  {showBrowserVoice && selectedPatientId && (
-                      <div className="border-b border-slate-100 bg-slate-50 relative pb-4 animate-fadeIn">
-                          <VoiceDemo 
-                              patientPhone={phoneNumber || undefined}
-                              patientId={selectedPatientId}
-                              patientContextString={`
+      {/* Slide-Over Journal Drawer (Chat Window) */}
+      <div 
+        className={`fixed inset-y-0 right-0 z-50 w-full md:w-[600px] bg-white shadow-2xl transform transition-transform duration-300 ease-in-out border-l border-slate-200 flex flex-col ${showJournalDrawer ? 'translate-x-0' : 'translate-x-full'}`}
+      >
+          {/* Drawer Header */}
+          <div className="px-6 py-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/80 backdrop-blur-md">
+            <div className="flex items-center gap-4">
+              <button 
+                onClick={() => setShowJournalDrawer(false)}
+                className="w-10 h-10 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center hover:bg-slate-300 font-bold transition-colors"
+              >
+                ✕
+              </button>
+              <div>
+                  <div className="font-bold text-slate-800 text-lg">Patient Journal & AI</div>
+                  <div className="text-xs text-green-600 flex items-center gap-1 font-bold mt-0.5">
+                      <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span> Terminal Connected
+                  </div>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={downloadLog} className="p-2 bg-white border border-slate-200 text-slate-600 rounded-xl text-sm font-bold shadow-sm hover:bg-slate-50 transition-colors" title="Export .TXT Log">
+                  📄
+              </button>
+              <button onClick={() => setShowBrowserVoice(!showBrowserVoice)} className={`p-2 border rounded-xl shadow-sm transition-colors font-bold text-sm ${showBrowserVoice ? 'bg-red-50 text-red-600 border-red-200 hover:bg-red-100' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'}`} title="Live Browser Chat">
+                  🎙️ {showBrowserVoice && 'Close'}
+              </button>
+              <button onClick={triggerCall} disabled={isCalling} className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-xl text-sm font-bold shadow-sm transition-colors disabled:opacity-50">
+                  {isCalling ? 'Dialing...' : '📞 Call'}
+              </button>
+            </div>
+          </div>
+
+          {/* Voice AI Container */}
+          {showBrowserVoice && selectedPatientId && (
+              <div className="border-b border-slate-200 bg-slate-100 p-4 shadow-inner relative">
+                  <VoiceDemo 
+                      patientPhone={phoneNumber || undefined}
+                      patientId={selectedPatientId}
+                      patientContextString={`
 USER PROFILE CONTEXT:
 - Name: ${patients.find(p => p.id === selectedPatientId)?.full_name || 'Unknown'}
 - Age: ${patients.find(p => p.id === selectedPatientId)?.age || 'Unknown'}
@@ -338,72 +370,79 @@ USER PROFILE CONTEXT:
 - Emergency Contact: ${patients.find(p => p.id === selectedPatientId)?.emergency_contact_name || 'None'}
 - Caregiver: ${patients.find(p => p.id === selectedPatientId)?.caregiver_name || 'Assigned Caregiver'}
 - Notes: ${patients.find(p => p.id === selectedPatientId)?.notes || 'None'}
-                              `}
-                          />
-                      </div>
-                  )}
+                      `}
+                  />
+              </div>
+          )}
 
-                  {/* Messages */}
-                  <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 space-y-6 bg-white min-h-[300px]">
-                        {messages.length === 0 && !isTyping && (
-                            <div className="text-center text-slate-400 text-sm mt-10">No messages yet. Send a message to start tracking your journey.</div>
-                        )}
-                        {messages.map((msg, idx) => (
-                        <div key={idx} className={`flex flex-col ${msg.sender === 'user' ? 'items-end' : 'items-start'} animate-fadeIn`}>
-                                <div className={`max-w-[85%] px-5 py-3 rounded-2xl text-sm leading-relaxed shadow-sm ${
-                                    msg.sender === 'user'
-                                    ? 'bg-wellness-blue text-white rounded-br-none'
-                                    : 'bg-slate-100 text-slate-700 rounded-bl-none'
-                                }`}>
-                                    {msg.text}
-                                    {msg.mediaUrl && (
-                                        <img 
-                                            src={msg.mediaUrl} 
-                                            alt="Support Visual" 
-                                            className="mt-3 rounded-xl cursor-pointer hover:opacity-90 max-h-32 object-cover"
-                                            onClick={() => setSelectedImage(msg.mediaUrl!)}
-                                        />
-                                    )}
-                                </div>
-                                <span className="text-[10px] text-slate-300 mt-1 px-1">{msg.time}</span>
+          {/* Messages Feed */}
+          <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-6 space-y-6 bg-slate-50 custom-scrollbar">
+                {messages.length === 0 && !isTyping && (
+                    <div className="text-center text-slate-400 text-sm mt-10">No messages yet. Send a message to document a journal entry.</div>
+                )}
+                {messages.map((msg, idx) => (
+                <div key={idx} className={`flex flex-col ${msg.sender === 'user' ? 'items-end' : 'items-start'} animate-fadeIn`}>
+                        <div className={`max-w-[90%] px-5 py-3 rounded-2xl text-[15px] leading-relaxed shadow-sm ${
+                            msg.sender === 'user'
+                            ? 'bg-wellness-blue text-white rounded-br-none'
+                            : 'bg-white border border-slate-200 text-slate-700 rounded-bl-none'
+                        }`}>
+                            {msg.text}
+                            {msg.mediaUrl && (
+                                <img 
+                                    src={msg.mediaUrl} 
+                                    alt="Support Visual" 
+                                    className="mt-3 rounded-xl cursor-pointer hover:opacity-90 max-h-48 w-full object-cover border border-slate-100"
+                                    onClick={() => setSelectedImage(msg.mediaUrl!)}
+                                />
+                            )}
                         </div>
-                        ))}
-                    {isTyping && (
-                      <div className="text-xs text-slate-400 pl-4 italic">Parallel is writing...</div>
-                    )}
-                  </div>
-
-                  {/* Input */}
-                  <form onSubmit={handleSend} className="p-4 border-t border-slate-100 bg-white flex gap-2">
-                    <input
-                      type="text"
-                      value={input}
-                      onChange={(e) => setInput(e.target.value)}
-                      placeholder="Write a journal entry or message..."
-                      className="flex-1 bg-slate-50 border border-slate-200 rounded-full px-6 py-3 text-slate-800 focus:outline-none focus:ring-2 focus:ring-wellness-blue/50"
-                      disabled={isTyping}
-                    />
-                    <button type="submit" disabled={isTyping || !input.trim()} className="bg-wellness-blue text-white w-12 h-12 rounded-full flex items-center justify-center hover:bg-blue-600 transition-colors disabled:opacity-50">
-                        ➤
-                    </button>
-                  </form>
-            </div>
+                        <span className="text-[10px] text-slate-400 mt-1.5 px-2 font-medium tracking-wide">{msg.time}</span>
+                </div>
+                ))}
+            {isTyping && (
+              <div className="text-xs text-wellness-blue pl-4 italic font-medium animate-pulse">Parallel is logging...</div>
+            )}
           </div>
-        </div>
+
+          {/* Input Box */}
+          <form onSubmit={handleSend} className="p-4 border-t border-slate-200 bg-white">
+            <div className="flex gap-3 relative">
+                <input
+                  type="text"
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  placeholder="Record patient notes or message..."
+                  className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-800 focus:outline-none focus:ring-2 focus:ring-wellness-blue/50 focus:bg-white transition-all shadow-inner"
+                  disabled={isTyping}
+                />
+                <button type="submit" disabled={isTyping || !input.trim()} className="bg-wellness-blue text-white px-5 rounded-xl font-bold hover:bg-blue-600 transition-colors shadow-md disabled:opacity-50 disabled:shadow-none focus:ring-2 focus:ring-offset-2 focus:ring-wellness-blue focus:outline-none">
+                    Send
+                </button>
+            </div>
+          </form>
       </div>
-      
+
+      {/* Floating Backdrop for Drawer */}
+      {showJournalDrawer && (
+          <div 
+             className="fixed inset-0 z-40 bg-slate-900/20 backdrop-blur-[2px] transition-opacity duration-300"
+             onClick={() => setShowJournalDrawer(false)}
+          ></div>
+      )}
+
       {/* Lightbox */}
       {selectedImage && (
         <div className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center p-4" onClick={() => setSelectedImage(null)}>
-          <img src={selectedImage} alt="Full Size" className="max-w-full max-h-[90vh] rounded-lg" />
+          <img src={selectedImage} alt="Full Size" className="max-w-full max-h-[90vh] rounded-lg shadow-2xl" />
         </div>
       )}
 
       {/* Patient Intake Modal */}
       {showIntake && (
-        <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto pt-24 pb-12">
-           <div className="bg-white rounded-3xl max-w-3xl w-full p-8 relative shadow-2xl">
-               <button onClick={() => setShowIntake(false)} className="absolute top-6 right-6 text-slate-400 hover:text-slate-800 z-10 w-8 h-8 flex items-center justify-center bg-slate-100 rounded-full transition-colors">✕</button>
+        <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto pt-24 pb-12 animate-fadeIn">
+           <div className="bg-white rounded-3xl max-w-3xl w-full p-8 relative shadow-2xl transform transition-transform scale-100">
+               <button onClick={() => setShowIntake(false)} className="absolute top-6 right-6 text-slate-400 hover:text-slate-800 z-10 w-8 h-8 flex items-center justify-center bg-slate-100 rounded-full transition-colors hover:bg-slate-200 font-bold">✕</button>
                <h2 className="text-3xl font-bold mb-8 text-slate-800 border-b border-slate-100 pb-4">{editingPatientId ? 'Edit Patient Profile' : 'Add New Patient'}</h2>
                <div className="max-h-[70vh] overflow-y-auto pr-4 custom-scrollbar">
                    <UserIntakeForm 

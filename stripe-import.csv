@@ -1,0 +1,19 @@
+type,name,description,currency,unit_amount,interval,lookup_key
+product,MyParallel Base Plan,Base AI companion subscription.,,,
+price,MyParallel Base Plan - Monthly,Base AI companion subscription.,usd,19.00,month,base_monthly
+product,Deep Emotional Memory,Enhanced long term emotional memory.,,,
+price,Deep Emotional Memory - Monthly,Enhanced long term emotional memory.,usd,6.00,month,deep_memory
+product,Proactive Random Text Outreach,Random caring messages and check ins.,,,
+price,Proactive Random Text Outreach - Monthly,Random caring messages and check ins.,usd,5.00,month,text_outreach
+product,Email Outreach,Personalized email notes.,,,
+price,Email Outreach - Monthly,Personalized email notes.,usd,3.00,month,email_outreach
+product,Phone Call Outreach,AI phone calls and voicemail style messages.,,,
+price,Phone Call Outreach - Monthly,AI phone calls and voicemail style messages.,usd,12.00,month,phone_call_outreach
+product,Full Voice AI,Real time voice conversations.,,,
+price,Full Voice AI - Monthly,Real time voice conversations.,usd,10.00,month,voice_ai
+product,Custom Voice Clone,Custom voice generated from audio.,,,
+price,Custom Voice Clone - Monthly,Custom voice generated from audio.,usd,9.00,month,voice_clone
+product,Multi Companion Slot,Add an additional companion.,,,
+price,Multi Companion Slot - Monthly,Add an additional companion.,usd,7.00,month,multi_companion
+product,Extended Memory Retention,Stores longer term history.,,,
+price,Extended Memory Retention - Monthly,Stores longer term history.,usd,4.00,month,extended_memory

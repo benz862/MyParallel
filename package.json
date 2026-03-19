@@ -4,25 +4,43 @@
   "type": "module",
   "scripts": {
     "start": "node backend-server.js",
+    "start:voice": "node voice-relay.js",
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "create-demo-user": "node scripts/create-demo-user.js",
+    "set-stripe-lookup-keys": "node scripts/set-stripe-lookup-keys.js",
+    "check-stripe-product": "node scripts/check-stripe-product.js"
   },
   "dependencies": {
-    "express": "^4.18.2",
-    "ws": "^8.13.0",
-    "twilio": "^4.19.0",
-    "dotenv": "^16.3.1",
     "@google/genai": "^1.30.0",
     "@supabase/supabase-js": "^2.39.0",
+    "alawmulaw": "^6.0.0",
     "cors": "^2.8.5",
+    "date-fns": "^4.1.0",
+    "date-fns-tz": "^3.2.0",
+    "dav": "^1.8.0",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "googleapis": "^144.0.0",
+    "node-cron": "^4.2.1",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^7.9.6",
+    "stripe": "^17.7.0",
+    "twilio": "^4.19.0",
+    "ws": "^8.13.0"
   },
   "devDependencies": {
-    "vite": "^5.0.0",
-    "@vitejs/plugin-react": "^4.2.0",
+    "@tailwindcss/container-queries": "^0.1.1",
+    "@tailwindcss/forms": "^0.5.10",
+    "@tailwindcss/typography": "^0.5.19",
     "@types/react": "^18.2.43",
-    "@types/react-dom": "^18.2.17"
+    "@types/react-dom": "^18.2.17",
+    "@vitejs/plugin-react": "^4.2.0",
+    "autoprefixer": "^10.4.22",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^3.4.18",
+    "vite": "^5.0.0"
   }
 }

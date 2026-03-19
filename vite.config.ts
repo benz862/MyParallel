@@ -2,23 +2,39 @@ import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 
 export default defineConfig(({ mode }) => {
-  // Load env file based on `mode` in the current working directory.
-  // Set the third parameter to '' to load all env regardless of the `VITE_` prefix.
-  const env = loadEnv(mode, (process as any).cwd(), '');
+  // Load environment variables
+  const env = loadEnv(mode, process.cwd(), '');
 
   return {
+    base: './', // Required for shared hosting compatibility
+
     plugins: [react()],
+
     define: {
-      // Polyfill process.env.API_KEY for the frontend
-      // We ONLY expose the API_KEY. We do NOT expose Twilio secrets to the client.
+      // Only expose the API_KEY if needed
       'process.env.API_KEY': JSON.stringify(env.API_KEY),
+      // Expose API URL for frontend
+      'import.meta.env.VITE_API_URL': JSON.stringify(env.VITE_API_URL),
+      'import.meta.env.VITE_USE_NGROK': JSON.stringify(env.VITE_USE_NGROK),
     },
+
     server: {
-      port: 3000,
+      port: 5173,       // ✔ FRONTEND runs on 5173
+      host: true,
+      strictPort: true,  // ✔ Force the port, no fallback to 3000
+      proxy: {
+        '/api': {
+          target: 'http://localhost:8081',
+          changeOrigin: true,
+        },
+      },
     },
+
     build: {
       outDir: 'dist',
-      sourcemap: false
+      assetsDir: 'assets',
+      sourcemap: false,
+      emptyOutDir: true,
     }
   };
 });

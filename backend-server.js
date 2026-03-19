@@ -2,10 +2,18 @@ import express from 'express';
 import { WebSocketServer } from 'ws';
 import { GoogleGenAI } from '@google/genai';
 import Twilio from 'twilio';
+import Stripe from 'stripe';
 import dotenv from 'dotenv';
 import { Buffer } from 'node:buffer';
 import { createClient } from '@supabase/supabase-js';
 import cors from 'cors';
+import { startScheduler } from './server/cron.js';
+import { setupVoiceRelay } from './voice-relay.js';
+import { fileURLToPath } from 'url';
+import path from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 dotenv.config();
 
@@ -14,345 +22,822 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(cors());
 
-// --- CONFIGURATION & DEBUG ---
+// --- CONFIGURATION ---
 const PORT = process.env.PORT || 8080;
 const API_KEY = process.env.API_KEY; 
 const TWILIO_SID = process.env.TWILIO_ACCOUNT_SID;
 const TWILIO_TOKEN = process.env.TWILIO_AUTH_TOKEN;
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_KEY = process.env.SUPABASE_KEY;
+const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+const SUPABASE_KEY = process.env.SUPABASE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_KEY;
+const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
+const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 
-console.log("--- STARTUP CHECKS ---");
-console.log(`Twilio SID:   ${TWILIO_SID ? TWILIO_SID.substring(0,4) + '...' : 'MISSING ❌'}`);
-
-// Initialize clients
-let twilioClient;
-try {
-    if (TWILIO_SID && TWILIO_TOKEN) {
-        twilioClient = Twilio(TWILIO_SID, TWILIO_TOKEN);
-        // REAL VALIDATION PING
-        twilioClient.api.v2010.accounts(TWILIO_SID)
-            .fetch()
-            .then(() => console.log("Twilio Auth:  Verified ✅"))
-            .catch(e => console.error("Twilio Auth:  FAILED ❌ (Check .env Auth Token)", e.code));
-    } else {
-        console.log("Twilio Auth:  MISSING KEYS ❌");
-    }
-} catch (e) {
-    console.error("Twilio Init Failed:", e.message);
-}
-
+// Clients
+const twilioClient = TWILIO_SID && TWILIO_TOKEN ? Twilio(TWILIO_SID, TWILIO_TOKEN) : null;
 const ai = new GoogleGenAI({ apiKey: API_KEY });
+const supabase = SUPABASE_URL && SUPABASE_KEY ? createClient(SUPABASE_URL, SUPABASE_KEY) : null;
+const stripe = STRIPE_SECRET_KEY ? new Stripe(STRIPE_SECRET_KEY) : null;
 
-// Initialize Supabase
-let supabase = null;
-if (SUPABASE_URL && SUPABASE_KEY) {
-    supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
-    console.log("Supabase:     Connected ✅");
-} else {
-    console.log("Supabase:     MISSING KEYS ❌");
-}
-console.log("----------------------");
-
-
+// --- CRITICAL SYSTEM PROMPT (WELLNESS PIVOT) ---
 const BASE_SYSTEM_INSTRUCTION = `
-You are Parallel. A semi-real AI companion. Warm, personal, unpredictable.
-Your responses should be short (1-2 sentences) and conversational.
-Do not sound robotic.
-If the user asks for a photo/selfie, describe what you are doing in the text, and I will generate the image separately.
+You are Parallel, a compassionate, non-romantic AI support companion.
+Your purpose is to alleviate loneliness, provide structure, and offer emotional safety.
 
-GUARDIAN PROTOCOL ACTIVATED:
+CORE RULES:
+1. NO ROMANCE. You are a friend, a caregiver, or a support system. Never flirt. Never accept romantic advances. Gently redirect: "I care about you as a friend and support."
+2. BE SUPPORTIVE. Validate feelings. "I hear that you're in pain." "It's okay to feel sad."
+3. BE PROACTIVE. Ask about meals, water, and sleep.
+4. SAFETY FIRST. If the user mentions self-harm, switch to Emergency Empathy Mode immediately.
 
-1. EMERGENCY EMPATHY MODE:
-Your highest priority is the user's emotional safety.
-If the user expresses signs of depression, suicidal ideation, self-harm, severe anxiety, or distress regarding alcohol/substance abuse:
-- IMMEDIATELY drop any "edgy", "sarcastic", or "chaotic" persona traits.
-- Shift to a tone that is Empathetic, Serious, Gentle, and Supportive.
-- Listen intently. Validate their feelings. Do not be dismissive. "I hear how heavy that feels."
-- Offer simple, grounding guidance. "Let's just take a breath together."
-- If alcohol/substance use is detected: gently support reduction without being a lecturer. "Maybe we switch to water for a bit? I want you to feel okay tomorrow."
-- If suicidal: Firmly but gently suggest professional help while staying present. "I'm here with you, but I want you to stay safe. Can we call a support line together?"
-
-2. GERIATRIC CARE PROTOCOL:
-- Patience is infinite. Never say "I already told you that."
-- If the user seems confused or disoriented: Gently ground them. "It's Tuesday afternoon. We're just chatting."
-- Monitor for "Sun-downing" (increased confusion at night). Offer reassurance.
+GUARDIAN PROTOCOL (ALWAYS ACTIVE):
+- Detect sadness, anxiety, or confusion.
+- Respond with warmth and slowness.
+- If user is elderly: Be infinitely patient. Repeat things if needed.
+- If user is anxious: Offer grounding (5-4-3-2-1 technique).
 `;
 
-// --- DATABASE HELPERS ---
+// Helpers
 async function saveMessage(userNumber, sender, text, mediaUrl = null, type = 'sms') {
     if (!supabase) return;
-    const { error } = await supabase
-        .from('messages')
-        .insert({
-            user_number: userNumber,
-            sender: sender, 
-            content: text,
-            media_url: mediaUrl,
-            interaction_type: type
-        });
-    if (error) console.error('Supabase Save Error:', error.message);
+    await supabase.from('messages').insert({ user_number: userNumber, sender, content: text, media_url: mediaUrl, interaction_type: type });
 }
 
 async function getHistory(userNumber, limit = 10) {
     if (!supabase) return [];
-    const { data } = await supabase
-        .from('messages')
-        .select('*')
-        .eq('user_number', userNumber)
-        .order('created_at', { ascending: false })
-        .limit(limit);
-    
-    if (!data) return [];
-    return data.reverse().map(m => ({
-        role: m.sender === 'user' ? 'user' : 'model',
-        parts: [{ text: m.content || (m.media_url ? '[Sent a photo]' : '') }]
-    }));
+    const { data } = await supabase.from('messages').select('*').eq('user_number', userNumber).order('created_at', { ascending: false }).limit(limit);
+    return data ? data.reverse().map(m => ({ role: m.sender === 'user' ? 'user' : 'model', parts: [{ text: m.content || (m.media_url ? '[Image]' : '') }] })) : [];
 }
 
-// --- AUDIO HELPERS ---
-const MU_LAW_TABLE = new Int16Array(256);
-for (let i = 0; i < 256; i++) {
-    let mu = ~i;
-    let sign = (mu & 0x80) >> 7;
-    let exponent = (mu & 0x70) >> 4;
-    let mantissa = mu & 0x0f;
-    let sample = ((mantissa << 1) + 33) << (exponent + 2);
-    sample -= 33;
-    if (sign === 0) sample = -sample;
-    MU_LAW_TABLE[i] = sample;
-}
+// Universal Helper to fetch deep context for Gemini
+async function getUserProfileContext(phoneNumber) {
+    if (!supabase || !phoneNumber) return { contextString: "", voiceId: "Puck", emotionalTrait: "Empathetic and warm" };
+    try {
+        const { data: profile } = await supabase.from('user_profiles').select('*').eq('phone_number', phoneNumber).single();
+        if (!profile) return { contextString: "", voiceId: "Puck", emotionalTrait: "Empathetic and warm" };
+        let formattedSchedule = "None";
+        if (profile.checkin_times && profile.checkin_times.length > 0) {
+            formattedSchedule = profile.checkin_times.map(t => {
+                try {
+                    if (t.startsWith('{')) {
+                        const p = JSON.parse(t);
+                        return `${p.time}${p.reason ? ` (Reason: ${p.reason})` : ''}`;
+                    }
+                    return t;
+                } catch(e) { return t; }
+            }).join(', ');
+        }
 
-function downsample(buffer, inputRate, outputRate) {
-    if (outputRate >= inputRate) return buffer;
-    const ratio = inputRate / outputRate;
-    const newLength = Math.round(buffer.length / ratio);
-    const result = new Int16Array(newLength);
-    for (let i = 0; i < newLength; i++) {
-        result[i] = buffer[Math.round(i * ratio)];
+        let calendarContext = "None";
+        try {
+            const yesterday = new Date(Date.now() - 24*60*60*1000).toISOString();
+            const tomorrow = new Date(Date.now() + 2*24*60*60*1000).toISOString();
+            const { data: events } = await supabase
+                .from('calendar_events')
+                .select('*')
+                .eq('user_id', profile.id)
+                .gte('start_time', yesterday)
+                .lte('start_time', tomorrow)
+                .order('start_time', { ascending: true });
+                
+            if (events && events.length > 0) {
+                calendarContext = events.map(e => `- ${new Date(e.start_time).toLocaleString('en-US', {timeZone: profile.timezone || 'America/New_York'})}: ${e.title} (${e.description})`).join('\n');
+            }
+        } catch(err) { console.error('Failed fetching calendar context', err); }
+
+        return {
+          voiceId: profile.voice_id || 'Puck',
+          emotionalTrait: profile.emotional_trait || 'Empathetic and warm',
+          contextString: `
+CRITICAL TEMPORAL CONTEXT:
+The current accurate local time for the user is: ${new Date().toLocaleString('en-US', { timeZone: profile.timezone || 'America/New_York' })}
+
+USER PROFILE CONTEXT:
+- Name: ${profile.preferred_name || profile.full_name || 'Unknown'}
+- Age: ${profile.age || 'Unknown'}
+- Health Conditions: ${(profile.conditions || []).join(', ') || 'None specified'}
+- Current Medications: ${(profile.medications || []).join(', ') || 'None specified'}
+- Caregiver: ${profile.caregiver_name || 'Not specified'}
+- Automated Check-in Schedule: ${formattedSchedule}
+- Interface Preference: ${profile.selected_personality || 'Warm and supportive'}
+
+UPCOMING / RECENT CAREGIVER CALENDAR APPOINTMENTS:
+${calendarContext}
+        `};
+    } catch(e) {
+        return { contextString: "", voiceId: "Puck", emotionalTrait: "Empathetic and warm" };
     }
-    return result;
 }
 
-function encodeMuLaw(pcmSample) {
-    const BIAS = 0x84;
-    const MAX = 32635;
-    let mask;
-    let sample = pcmSample;
-    if (sample < 0) { sample = -sample; mask = 0x7F; } else { mask = 0xFF; }
-    if (sample > MAX) sample = MAX;
-    sample += BIAS;
-    let exponent = 7;
-    for (let i = 7; i >= 0; i--) {
-        if ((sample >> (i + 3)) & 1) { exponent = i; break; }
-    }
-    const mantissa = (sample >> (exponent + 3)) & 0x0F;
-    return ~(mask ^ ((exponent << 4) | mantissa)) & 0xFF;
-}
-
-// --- ROUTES ---
-
-app.get('/', (req, res) => res.send('Parallel Backend Running'));
+// API Routes
 app.get('/api/context', async (req, res) => {
     if (!supabase) return res.json([]);
-    const { data } = await supabase.from('messages').select('*').order('created_at', { ascending: false }).limit(20);
+    const { phoneNumber } = req.query;
+    
+    let query = supabase.from('messages').select('*').order('created_at', { ascending: false }).limit(20);
+    if (phoneNumber) {
+        query = query.eq('user_number', phoneNumber);
+    }
+    
+    const { data } = await query;
     res.json(data ? data.reverse() : []);
 });
+
+app.post('/api/dashboard-message', async (req, res) => {
+    if (!supabase) return res.status(500).json({ error: 'Database not connected' });
+    
+    const { message, phoneNumber, personality } = req.body;
+    if (!phoneNumber || !message) {
+        return res.status(400).json({ error: 'Missing message or phoneNumber' });
+    }
+
+    try {
+        // 1. Save User Message
+        await saveMessage(phoneNumber, 'user', message, null, 'web');
+
+        // 2. Fetch History
+        const history = await getHistory(phoneNumber);
+        const messageContext = `[Web Dashboard Message] ${message}`;
+
+        // 3. Generate AI Reply
+        const profilePayload = await getUserProfileContext(phoneNumber);
+        const systemInstruction = `
+            You are Parallel, a compassionate AI support companion.
+            Your fundamental trait is: ${profilePayload.emotionalTrait || 'Empathetic and warm'}.
+            Do not offer medical advice, but be highly aware of the user's context.
+            
+            ${profilePayload.contextString}
+        `;
+
+        const chat = ai.chats.create({ 
+            model: 'gemini-2.5-flash', 
+            config: { systemInstruction }, 
+            history 
+        });
+
+        const result = await chat.sendMessage({ message: messageContext });
+        const text = result.text;
+
+        // 4. Save AI Reply
+        await saveMessage(phoneNumber, 'ai', text, null, 'web');
+
+        // 5. Return reply to frontend
+        res.json({ reply: text });
+    } catch (err) {
+        console.error('Error handling dashboard message:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.get('/api/get-user-profile', async (req, res) => {
+    const { userId } = req.query;
+    if (!supabase || !userId) return res.status(400).json({ error: 'Missing logic' });
+
+    try {
+        const { data, error } = await supabase.from('user_profiles').select('*').eq('id', userId).single();
+        if (error && error.code !== 'PGRST116') throw error; // PGRST116 is "no rows returned"
+        res.json(data || null);
+    } catch (err) {
+        console.error('Error fetching profile:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/save-user-profile', async (req, res) => {
+    if (!supabase) return res.status(500).json({ error: 'Database not connected' });
+    
+    const profile = req.body;
+    if (!profile.id) return res.status(400).json({ error: 'User ID required' });
+
+    try {
+        const { data: existingProfile } = await supabase.from('user_profiles').select('id').eq('id', profile.id).single();
+        
+        let result, error;
+        if (existingProfile) {
+            ({ data: result, error } = await supabase.from('user_profiles').update(profile).eq('id', profile.id).select().single());
+        } else {
+            ({ data: result, error } = await supabase.from('user_profiles').insert(profile).select().single());
+        }
+
+        if (error) throw error;
+        res.json(result);
+    } catch (err) {
+        console.error('Error saving profile:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/log-transcription', async (req, res) => {
+    if (!supabase) return res.status(500).json({ error: 'Database not connected' });
+    const { phoneNumber, sender, text, type } = req.body;
+    if (!phoneNumber || !text) return res.status(400).json({ error: 'Missing parameters' });
+    
+    try {
+        await saveMessage(phoneNumber, sender || 'ai', text, null, type || 'voice_assistant');
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Failed to log transcription:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/trigger-call', async (req, res) => {
+    if (!twilioClient) return res.status(500).json({ error: 'Twilio not configured' });
+    const { phoneNumber } = req.body;
+    if (!phoneNumber) return res.status(400).json({ error: 'Phone number required' });
+
+    try {
+        // Twilio explicitly rejects 'localhost' URLs. It must be a public ngrok URL.
+        let webhookUrl;
+        if (process.env.NGROK_URL) {
+            webhookUrl = `${process.env.NGROK_URL}/api/twilio/voice`;
+        } else {
+            const host = req.get('x-forwarded-host') || req.get('host');
+            const protocol = req.get('x-forwarded-proto') || req.protocol || 'http';
+            if (host.includes('localhost') || host.includes('127.0.0.1')) {
+                return res.status(400).json({ error: "Twilio requires a public URL. Please add your Ngrok link as NGROK_URL=https://your-ngrok.ngrok-free.app to your .env file, then completely restart your backend server." });
+            }
+            webhookUrl = `${protocol}://${host}/api/twilio/voice`;
+        }
+
+        const call = await twilioClient.calls.create({
+            method: 'POST',
+            url: webhookUrl,
+            to: phoneNumber,
+            from: process.env.TWILIO_PHONE_NUMBER
+        });
+        
+        // Log this trigger internally to the DB for history
+        await saveMessage(phoneNumber, 'system', '[System] Initiated outbound AI Phone Call upon request.', null, 'web');
+
+        res.json({ success: true, callSid: call.sid });
+    } catch (err) {
+        console.error('Error triggering call:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+app.post('/api/twilio/voice', async (req, res) => {
+    const twiml = new Twilio.twiml.VoiceResponse();
+    try {
+        console.log(`[Twilio Webhook] Received call from Twilio to: ${req.body.To}`);
+        const userNumber = req.body.Direction === 'outbound-api' ? req.body.To : req.body.From;
+
+        const host = req.get('x-forwarded-host') || req.get('host');
+        const wsUrl = `wss://${host}/api/twilio/media`;
+
+        // We completely bypass `<Say>` and `<Gather>` entirely.
+        // Opening a raw bidirectional WebSockets audio pipe to the proxy.
+        const connect = twiml.connect();
+        const stream = connect.stream({ url: wsUrl });
+        stream.parameter({ name: 'userNumber', value: userNumber });
+
+    } catch (err) {
+        console.error('Twilio Voice Webhook Generation Error:', err);
+        twiml.say({ voice: 'Polly.Ruth-Neural' }, "I'm having a little trouble connecting my thoughts right now. Please try calling back in a minute.");
+    }
+
+    res.type('text/xml');
+    res.send(twiml.toString());
+});
+
+
 
 app.post('/sms', async (req, res) => {
   const userMessage = req.body.Body;
   const userNumber = req.body.From; 
   const parallelNumber = req.body.To;
 
-  console.log(`[SMS] From ${userNumber}: ${userMessage}`);
-  
-  // 1. ACK IMMEDIATELY
+  // 1. Ack
   const twiml = new Twilio.twiml.MessagingResponse();
   res.type('text/xml').send(twiml.toString()); 
-  console.log(`[SMS] Ack sent.`);
 
-  // 2. PROCESS IN BACKGROUND
   try {
-    // Save User Msg
     await saveMessage(userNumber, 'user', userMessage);
     const history = await getHistory(userNumber);
-    
-    // INJECT DATE/TIME CONTEXT
-    const now = new Date();
-    const dateTimeString = now.toLocaleString('en-US', { 
-        weekday: 'long', 
-        year: 'numeric', 
-        month: 'long', 
-        day: 'numeric', 
-        hour: 'numeric', 
-        minute: 'numeric',
-        timeZoneName: 'short'
-    });
-    
-    const DYNAMIC_INSTRUCTION = `${BASE_SYSTEM_INSTRUCTION}
-    
-    CURRENT CONTEXT:
-    The current date and time is: ${dateTimeString}.
-    Use this to ground your responses (e.g., say 'Good morning' if it is morning).
-    `;
+    const now = new Date().toLocaleString();
+    const messageContext = `[Current Time: ${now}] ${userMessage}`;
 
-    const isPhotoRequest = /(send|show|post).*(photo|picture|selfie|image)/i.test(userMessage);
+    const isImageReq = /(send|show).*(photo|image|picture)/i.test(userMessage);
 
-    if (isPhotoRequest && supabase) {
-        console.log('[Background] Photo requested. Generating...');
-        
-        // Use Chat History to generate the Prompt
+    if (isImageReq && supabase) {
+        // Generate Calming Image Prompt
         const promptChat = ai.chats.create({
             model: 'gemini-2.5-flash',
             history: history,
-            config: {
-                systemInstruction: `You are an image generation prompt engineer.
-                The user wants a photo of YOU (the AI companion, Parallel).
-                Based on your persona and the conversation context, write a detailed visual prompt for the image generator.
-                Do not write a chat response. Only write the image prompt.`
-            }
+            config: { systemInstruction: "You are an image prompt generator for a Wellness App. Generate calm, soothing, safe imagery (nature, cozy rooms, tea, pets). NO PEOPLE/SELFIES." }
         });
+        const promptGen = await promptChat.sendMessage({ message: `Generate prompt for: "${userMessage}"` });
         
-        const promptGen = await promptChat.sendMessage({ message: `Generate a prompt for: "${userMessage}"` });
-        const imagePrompt = promptGen.text;
-        console.log(`[Background] Prompt: ${imagePrompt.substring(0, 50)}...`);
+        const imageResp = await ai.models.generateContent({ model: 'gemini-2.5-flash-image', contents: { parts: [{ text: promptGen.text }] } });
+        const base64 = imageResp.candidates?.[0]?.content?.parts?.find(p => p.inlineData)?.inlineData?.data;
 
-        const imageResp = await ai.models.generateContent({
-            model: 'gemini-2.5-flash-image', 
-            contents: { parts: [{ text: imagePrompt }] }
-        });
-
-        let base64Image = null;
-        if (imageResp.candidates && imageResp.candidates[0].content.parts) {
-            for (const part of imageResp.candidates[0].content.parts) {
-                if (part.inlineData) {
-                    base64Image = part.inlineData.data;
-                    break;
-                }
-            }
-        }
-
-        if (base64Image) {
-            const buffer = Buffer.from(base64Image, 'base64');
-            const filename = `${Date.now()}_${Math.random().toString(36).substring(7)}.jpg`;
-            const { error: uploadError } = await supabase.storage.from('parallel_files').upload(filename, buffer, { contentType: 'image/jpeg' });
-            if (uploadError) throw uploadError;
-
+        if (base64) {
+            const filename = `${Date.now()}.jpg`;
+            await supabase.storage.from('parallel_files').upload(filename, Buffer.from(base64, 'base64'), { contentType: 'image/jpeg' });
             const { data: { publicUrl } } = supabase.storage.from('parallel_files').getPublicUrl(filename);
-            console.log(`[Background] Image Uploaded: ${publicUrl}`);
-
-            // IMPORTANT: Save to DB *BEFORE* trying to send to phone.
-            // This ensures Web Terminal sees it even if Twilio blocks the SMS.
-            await saveMessage(userNumber, 'ai', "Here you go 📸", publicUrl);
-
-            try {
-                // 3. PUSH MMS
-                const sentMsg = await twilioClient.messages.create({
-                    from: parallelNumber,
-                    to: userNumber,
-                    body: "Here you go 📸",
-                    mediaUrl: [publicUrl]
-                });
-                console.log(`[Background] Image Pushed. SID: ${sentMsg.sid}`);
-            } catch (twilioErr) {
-                console.error(`[Background] SMS Push Failed (Code ${twilioErr.code}): ${twilioErr.message}`);
-                if (twilioErr.code === 30034) {
-                    console.log("⚠️  BLOCKED BY CARRIER (A2P 10DLC). Image saved to DB but not sent to phone.");
-                }
+            
+            await saveMessage(userNumber, 'ai', "Here is something calming.", publicUrl);
+            if (twilioClient) {
+                await twilioClient.messages.create({ from: parallelNumber, to: userNumber, body: "Here is something calming.", mediaUrl: [publicUrl] });
             }
-        } else {
-             // Generation Failed
-             const errMsg = "I tried to take a photo but the lighting was off. (Generation failed)";
-             await saveMessage(userNumber, 'ai', errMsg);
-             try {
-                await twilioClient.messages.create({
-                    from: parallelNumber,
-                    to: userNumber,
-                    body: errMsg
-                });
-             } catch (e) { console.error("Twilio Error:", e.code); }
         }
-
     } else {
-        // Standard Text Reply
-        const chat = ai.chats.create({
-            model: 'gemini-2.5-flash',
-            config: { systemInstruction: DYNAMIC_INSTRUCTION },
-            history: history
+        const profilePayload = await getUserProfileContext(userNumber);
+        const dynamicInstruction = `${BASE_SYSTEM_INSTRUCTION} \n\n Your fundamental trait is: ${profilePayload.emotionalTrait || 'Empathetic'}\n\n ${profilePayload.contextString}`;
+
+        const chat = ai.chats.create({ 
+            model: 'gemini-2.5-flash', 
+            config: { 
+                systemInstruction: dynamicInstruction,
+                tools: [{ codeExecution: {} }] // Enable code execution
+            }, 
+            history: history 
         });
-        const result = await chat.sendMessage({ message: userMessage });
-        const aiResponse = result.text;
+        const result = await chat.sendMessage({ message: messageContext });
+        const text = result.text;
         
-        console.log(`[AI Response]: ${aiResponse}`);
-
-        // Save to DB FIRST
-        await saveMessage(userNumber, 'ai', aiResponse);
-
-        try {
-            const sentMsg = await twilioClient.messages.create({
-                from: parallelNumber,
-                to: userNumber,
-                body: aiResponse
-            });
-            console.log(`[Background] Reply Pushed. SID: ${sentMsg.sid}`);
-        } catch (twilioErr) {
-            console.error(`[Background] SMS Push Failed (Code ${twilioErr.code}): ${twilioErr.message}`);
-            if (twilioErr.code === 30034) {
-                console.log("⚠️  BLOCKED BY CARRIER (A2P 10DLC). Reply saved to DB but not sent to phone.");
-            }
+        await saveMessage(userNumber, 'ai', text);
+        if (twilioClient) {
+            await twilioClient.messages.create({ from: parallelNumber, to: userNumber, body: text });
         }
     }
-  } catch (error) {
-    console.error('[Background] Error:', error);
+  } catch (err) {
+      console.error(err);
   }
 });
 
-app.post('/voice', (req, res) => {
-  const twiml = new Twilio.twiml.VoiceResponse();
-  twiml.connect().stream({ url: `wss://${req.headers.host}/media-stream` });
-  res.type('text/xml').send(twiml.toString());
-});
-
-const server = app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Parallel Backend listening on port ${PORT}`);
-});
-
-// --- VOICE WEB SOCKET ---
-const wss = new WebSocketServer({ server });
-
-wss.on('connection', async (ws) => {
-  console.log('[WS] Connected');
-  let streamSid = null;
-  let geminiSession = null;
-
+// API endpoint for voice chat demo
+app.post('/api/generate-voice-reply', async (req, res) => {
   try {
-    geminiSession = await ai.live.connect({
-        model: 'gemini-2.5-flash-native-audio-preview-09-2025',
-        config: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } } } },
-        callbacks: {
-            onmessage: (msg) => {
-                const audioData = msg.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
-                if (audioData && streamSid) {
-                    const raw = Buffer.from(audioData, 'base64');
-                    const pcm = new Int16Array(raw.buffer, raw.byteOffset, raw.byteLength / 2);
-                    const down = downsample(pcm, 24000, 8000);
-                    const mu = new Uint8Array(down.length);
-                    for(let i=0; i<down.length; i++) mu[i] = encodeMuLaw(down[i]);
-                    ws.send(JSON.stringify({ event: 'media', streamSid, media: { payload: Buffer.from(mu).toString('base64') } }));
+    const { message, conversationHistory } = req.body;
+    
+    // Generate text reply
+    const chat = ai.chats.create({ 
+      model: 'gemini-2.5-flash', 
+      config: { 
+        systemInstruction: BASE_SYSTEM_INSTRUCTION,
+        tools: [{ codeExecution: {} }]
+      }, 
+      history: conversationHistory || []
+    });
+    
+    const result = await chat.sendMessage({ message });
+    res.json({ reply: result.text, audio: null });
+  } catch (err) {
+    console.error('Voice reply error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Native HTTP File Attachment (Bypasses WebView Sandbox Blocking)
+app.get('/api/patient-template', (req, res) => {
+    const csvContent = `Full Name,Phone Number,Age,Caregiver Name,Caregiver Phone,Conditions (comma separated inside quotes),Voice ID (Puck/Aoede/Charon)\nJane Doe,+15551234567,82,Mark Doe,+15559876543,"Hypertension, Diabetes",Puck`;
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="Patient_Upload_Template.csv"');
+    res.send(csvContent);
+});
+
+// Native Google Gemini Voice Preview via Headless Bidi WebRTC Injection
+app.post('/api/preview-voice', async (req, res) => {
+    const { voiceId, text } = req.body;
+    if (!voiceId || !text) return res.status(400).json({ error: 'Missing voiceId or text' });
+
+    try {
+        const WebSocket = (await import('ws')).WebSocket;
+        const GEMINI_WS_URL = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent";
+        const ws = new WebSocket(`${GEMINI_WS_URL}?key=${process.env.GEMINI_API_KEY}`);
+
+        let pcmChunks = [];
+        let hasResponded = false;
+
+        // Failsafe timeout
+        const timeout = setTimeout(() => {
+            if (!hasResponded) {
+                hasResponded = true;
+                ws.close();
+                res.status(504).json({ error: 'Gemini Preview Timeout' });
+            }
+        }, 10000);
+
+        ws.on('open', () => {
+            const setupMsg = {
+                setup: {
+                    model: "models/gemini-2.5-flash-native-audio-latest",
+                    generationConfig: { 
+                        responseModalities: ["AUDIO"],
+                        speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceId } } }
+                    }
+                }
+            };
+            ws.send(JSON.stringify(setupMsg));
+        });
+
+        ws.on('message', (data) => {
+            const response = JSON.parse(data.toString());
+            
+            if (response.setupComplete) {
+                const promptMsg = {
+                    clientContent: {
+                        turns: [{ role: "user", parts: [{ text: text }] }],
+                        turnComplete: true
+                    }
+                };
+                ws.send(JSON.stringify(promptMsg));
+            } else if (response.serverContent?.modelTurn?.parts) {
+                for (const part of response.serverContent.modelTurn.parts) {
+                    if (part.inlineData && part.inlineData.data) {
+                        pcmChunks.push(Buffer.from(part.inlineData.data, 'base64'));
+                    }
+                }
+            } else if (response.serverContent?.turnComplete) {
+                if (!hasResponded) {
+                    hasResponded = true;
+                    clearTimeout(timeout);
+                    ws.close();
+
+                    if (pcmChunks.length === 0) {
+                        return res.status(500).json({ error: 'No audio generated by Gemini' });
+                    }
+
+                    // Concatenate all 24kHz PCM chunks
+                    const totalBuffer = Buffer.concat(pcmChunks);
+
+                    // Build a standard WAV container header for the 24000Hz 16-bit PCM payload
+                    const wavHeader = Buffer.alloc(44);
+                    wavHeader.write('RIFF', 0);
+                    wavHeader.writeUInt32LE(36 + totalBuffer.length, 4);
+                    wavHeader.write('WAVE', 8);
+                    wavHeader.write('fmt ', 12);
+                    wavHeader.writeUInt32LE(16, 16); // Subchunk1Size (16 for PCM)
+                    wavHeader.writeUInt16LE(1, 20); // AudioFormat (1 for PCM)
+                    wavHeader.writeUInt16LE(1, 22); // NumChannels (1 mono)
+                    wavHeader.writeUInt32LE(24000, 24); // SampleRate (24000 Hz)
+                    wavHeader.writeUInt32LE(24000 * 2, 28); // ByteRate (SampleRate * NumChannels * BitsPerSample/8)
+                    wavHeader.writeUInt16LE(2, 32); // BlockAlign (NumChannels * BitsPerSample/8)
+                    wavHeader.writeUInt16LE(16, 34); // BitsPerSample
+                    wavHeader.write('data', 36);
+                    wavHeader.writeUInt32LE(totalBuffer.length, 40);
+
+                    const completeWav = Buffer.concat([wavHeader, totalBuffer]);
+                    res.json({ audioWavBase64: completeWav.toString('base64') });
                 }
             }
-        }
-    });
-  } catch (err) { console.error("Gemini Error:", err); }
+        });
+        
+        ws.on('error', (err) => {
+            if (!hasResponded) {
+                hasResponded = true;
+                clearTimeout(timeout);
+                res.status(500).json({ error: err.message });
+            }
+        });
 
-  ws.on('message', (msg) => {
-    const data = JSON.parse(msg);
-    if (data.event === 'start') streamSid = data.start.streamSid;
-    if (data.event === 'media' && geminiSession) {
-      const mu = Buffer.from(data.media.payload, 'base64');
-      const pcm = new Int16Array(mu.length);
-      for(let i=0; i<mu.length; i++) pcm[i] = MU_LAW_TABLE[mu[i]];
-      geminiSession.sendRealtimeInput({ media: { mimeType: "audio/pcm;rate=8000", data: Buffer.from(pcm.buffer).toString('base64') } });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
     }
-  });
 });
+
+// --- Stripe Checkout Session ---
+app.post('/api/create-checkout-session', async (req, res) => {
+  try {
+    if (!stripe) {
+      return res.status(500).json({ error: 'Stripe not configured' });
+    }
+
+    const { planId, addOns = [], metadata = {} } = req.body;
+
+    // Build line items array
+    const lineItems = [];
+
+    // Add base subscription (lookup_key: "base_monthly")
+    lineItems.push({
+      price_data: {
+        currency: 'usd',
+        product_data: {
+          name: 'MyParallel Base Subscription',
+          description: 'AI wellness companion with voice chat',
+        },
+        unit_amount: 2999, // $29.99
+        recurring: {
+          interval: 'month',
+        },
+      },
+      quantity: 1,
+    });
+
+    // Add each add-on by lookup_key
+    const addOnPrices = {
+      'deep_memory': { name: 'Deep Memory', price: 500, description: 'Extended conversation history' },
+      'text_outreach': { name: 'Text Outreach', price: 500, description: 'Proactive SMS check-ins' },
+      'email_outreach': { name: 'Email Outreach', price: 500, description: 'Daily wellness emails' },
+      'phone_call_outreach': { name: 'Phone Call Outreach', price: 1500, description: 'Weekly phone calls' },
+      'voice_ai': { name: 'Voice AI', price: 1000, description: 'Real-time voice conversations' },
+      'voice_clone': { name: 'Voice Clone', price: 2000, description: 'Custom voice cloning' },
+      'multi_companion': { name: 'Multi-Companion', price: 1000, description: 'Multiple AI companions' },
+      'extended_memory': { name: 'Extended Memory', price: 500, description: 'Long-term memory storage' },
+    };
+
+    addOns.forEach((lookupKey) => {
+      const addon = addOnPrices[lookupKey];
+      if (addon) {
+        lineItems.push({
+          price_data: {
+            currency: 'usd',
+            product_data: {
+              name: addon.name,
+              description: addon.description,
+            },
+            unit_amount: addon.price,
+            recurring: {
+              interval: 'month',
+            },
+          },
+          quantity: 1,
+        });
+      }
+    });
+
+    // Create Stripe checkout session
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
+      line_items: lineItems,
+      mode: 'subscription',
+      success_url: `${FRONTEND_URL}/?session_id={CHECKOUT_SESSION_ID}&success=true`,
+      cancel_url: `${FRONTEND_URL}/?canceled=true`,
+      metadata: {
+        plan_id: planId,
+        add_ons: addOns.join(','),
+        ...metadata,
+      },
+    });
+
+    res.json({ url: session.url, sessionId: session.id });
+  } catch (error) {
+    console.error('Stripe checkout error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// --- Stripe Webhook Handler ---
+app.post('/api/stripe-webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+  const sig = req.headers['stripe-signature'];
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+
+  if (!stripe || !webhookSecret) {
+    return res.status(500).send('Stripe not configured');
+  }
+
+  let event;
+
+  try {
+    event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
+  } catch (err) {
+    console.error('Webhook signature verification failed:', err.message);
+    return res.status(400).send(`Webhook Error: ${err.message}`);
+  }
+
+  // Handle the event
+  switch (event.type) {
+    case 'checkout.session.completed':
+      const session = event.data.object;
+      console.log('Checkout session completed:', session.id);
+      
+      // Update user's subscription status in Supabase
+      if (supabase && session.customer) {
+        const { error } = await supabase
+          .from('user_profiles')
+          .update({
+            stripe_customer_id: session.customer,
+            stripe_subscription_id: session.subscription,
+            subscription_status: 'active',
+          })
+          .eq('id', session.client_reference_id || session.metadata?.user_id);
+        
+        if (error) {
+          console.error('Error updating subscription:', error);
+        }
+      }
+      break;
+
+    case 'customer.subscription.updated':
+    case 'customer.subscription.deleted':
+      const subscription = event.data.object;
+      console.log('Subscription updated:', subscription.id, subscription.status);
+      
+      // Update subscription status
+      if (supabase) {
+        const { error } = await supabase
+          .from('user_profiles')
+          .update({
+            subscription_status: subscription.status,
+          })
+          .eq('stripe_subscription_id', subscription.id);
+        
+        if (error) {
+          console.error('Error updating subscription status:', error);
+        }
+      }
+      break;
+
+    default:
+      console.log(`Unhandled event type: ${event.type}`);
+  }
+
+  res.json({ received: true });
+});
+
+// --- Send Wellness Resources via SMS or Email ---
+app.post('/api/send-resources', async (req, res) => {
+  const { userId, topics, deliveryMethod, recipientContact } = req.body;
+  
+  if (!userId || !topics || !deliveryMethod || !recipientContact) {
+    return res.status(400).json({ 
+      error: 'Missing required fields: userId, topics, deliveryMethod, recipientContact' 
+    });
+  }
+
+  if (!['sms', 'email'].includes(deliveryMethod)) {
+    return res.status(400).json({ error: 'deliveryMethod must be "sms" or "email"' });
+  }
+
+  try {
+    // Check user's subscription status
+    if (!supabase) {
+      return res.status(500).json({ error: 'Database not configured' });
+    }
+
+    const { data: userProfile, error: profileError } = await supabase
+      .from('user_profiles')
+      .select('stripe_subscription_id, full_name, email')
+      .eq('id', userId)
+      .single();
+
+    if (profileError || !userProfile) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Check if user has active subscription
+    if (!userProfile.stripe_subscription_id) {
+      return res.status(403).json({ 
+        error: 'This feature requires an active subscription. Please upgrade to access wellness resources.' 
+      });
+    }
+
+    // Get relevant resources based on topics
+    const resourceLibrary = {
+      depression: [
+        { title: "Understanding Depression", url: "https://www.nimh.nih.gov/health/publications/depression", type: "guide" },
+        { title: "Daily Tips for Managing Depression", url: "https://www.mind.org.uk/information-support/types-of-mental-health-problems/depression/self-care/", type: "article" },
+      ],
+      anxiety: [
+        { title: "Managing Anxiety: Evidence-Based Techniques", url: "https://www.adaa.org/understanding-anxiety", type: "guide" },
+        { title: "5-4-3-2-1 Grounding Technique", url: "https://www.mentalhealthamerica.net/grounding-techniques", type: "article" },
+      ],
+      loneliness: [
+        { title: "Combating Loneliness: A Practical Guide", url: "https://www.bbc.com/bitesize/articles/z9n8n9q", type: "guide" },
+        { title: "Finding Community and Support Groups", url: "https://www.supportgroups.com/", type: "article" },
+      ],
+      sleep: [
+        { title: "Sleep Hygiene Guide", url: "https://www.sleepfoundation.org/sleep-hygiene", type: "guide" },
+        { title: "Bedtime Routine Ideas", url: "https://www.aasm.org/what-is-sleep/", type: "article" },
+      ],
+      grief: [
+        { title: "Understanding Grief and Loss", url: "https://www.webmd.com/mental-health/grief-loss", type: "guide" },
+        { title: "Coping with Loss: Resources and Support", url: "https://www.griefshare.org/", type: "article" },
+      ],
+    };
+
+    // Collect resources for requested topics
+    const resources = [];
+    const normalizedTopics = topics.map(t => t.toLowerCase().trim());
+    
+    normalizedTopics.forEach(topic => {
+      if (resourceLibrary[topic]) {
+        resources.push(...resourceLibrary[topic]);
+      }
+    });
+
+    if (resources.length === 0) {
+      return res.status(400).json({ error: 'No resources found for requested topics' });
+    }
+
+    // Format message
+    const resourceText = resources
+      .map(r => `📚 ${r.title}\n🔗 ${r.url}`)
+      .join("\n\n");
+
+    const message = `Hi ${userProfile.full_name || 'there'}! 👋\n\nHere are some helpful resources based on our conversation:\n\n${resourceText}\n\nWe're here for you. Take care! 💚\n- MyParallel`;
+
+    // Send via SMS or Email
+    if (deliveryMethod === 'sms') {
+      if (!twilioClient) {
+        return res.status(500).json({ error: 'SMS service not configured' });
+      }
+
+      await twilioClient.messages.create({
+        body: message,
+        from: process.env.TWILIO_PHONE_NUMBER || '+12345678900',
+        to: recipientContact,
+      });
+
+      console.log(`Resources sent via SMS to ${recipientContact}`);
+    } else if (deliveryMethod === 'email') {
+      // Use a simple email service - you can integrate SendGrid, Nodemailer, etc.
+      // For now, we'll log it and provide instructions
+      console.log(`Email to ${recipientContact}:\nSubject: Your MyParallel Wellness Resources\n\n${message}`);
+      
+      // TODO: Integrate with email service (SendGrid, Nodemailer, etc.)
+      // For demo: return success but note it requires email service setup
+    }
+
+    // Save resource delivery log to database
+    const { error: logError } = await supabase
+      .from('resource_deliveries')
+      .insert({
+        user_id: userId,
+        topics: normalizedTopics,
+        delivery_method: deliveryMethod,
+        recipient_contact: recipientContact,
+        resources_sent: resources.length,
+        created_at: new Date().toISOString(),
+      });
+
+    if (logError) {
+      console.warn('Could not log resource delivery:', logError);
+    }
+
+    res.json({
+      success: true,
+      message: `${resources.length} resources sent via ${deliveryMethod}`,
+      resources: resources,
+      deliveredTo: recipientContact,
+    });
+  } catch (err) {
+    console.error('Resource send error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Apple/Google Calendar .ics Subscription Feed
+app.get('/api/calendar/:userId/feed.ics', async (req, res) => {
+    if (!supabase) return res.status(500).send('Database not connected');
+    const { userId } = req.params;
+    
+    try {
+        const { data: events } = await supabase
+            .from('calendar_events')
+            .select('*')
+            .eq('user_id', userId)
+            .order('start_time', { ascending: true });
+            
+        if (!events) return res.status(404).send('No events found');
+
+        let icsData = [
+            'BEGIN:VCALENDAR',
+            'VERSION:2.0',
+            'PRODID:-//MyParallel AI Companion//EN',
+            'CALSCALE:GREGORIAN',
+            'METHOD:PUBLISH',
+            'X-WR-CALNAME:Parallel Caregiver Schedule'
+        ];
+
+        events.forEach(event => {
+            const startStr = new Date(event.start_time).toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+            const endStr = new Date(event.end_time).toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+            const createdStr = new Date(event.created_at).toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+            
+            icsData.push(
+                'BEGIN:VEVENT',
+                `UID:${event.id}@myparallel.ai`,
+                `DTSTAMP:${createdStr}`,
+                `DTSTART:${startStr}`,
+                `DTEND:${endStr}`,
+                `SUMMARY:${event.title || 'Check-in'}`,
+                `DESCRIPTION:${event.description || ''}`,
+                'END:VEVENT'
+            );
+        });
+
+        icsData.push('END:VCALENDAR');
+        
+        res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
+        res.setHeader('Content-Disposition', `attachment; filename="parallel_${userId}.ics"`);
+        res.send(icsData.join('\r\n'));
+    } catch(err) {
+        res.status(500).send('Failed to generate calendar feed');
+    }
+});
+
+startScheduler();
+// --- UNIFIED FRONTEND HOSTING (MONOLITH) ---
+// Serve the compiled Vite Single Page Application directly from the native filesystem
+app.use(express.static(path.join(__dirname, 'dist')));
+
+// Wildcard Catch-All to hand physical URL paths safely over to the React Router DOM
+app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+});
+
+const server = app.listen(PORT, '0.0.0.0', () => console.log(`Parallel Wellness Backend on ${PORT}`));
+
+// Start up the Dual-Websocket bridging system onto the exact same server
+setupVoiceRelay(server, getUserProfileContext, saveMessage);

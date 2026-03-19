@@ -1,0 +1,847 @@
+--- START OF FILE utils/resourceLibrary.ts ---
+/**
+ * Resource Library for MyParallel
+ * Maps wellness topics to helpful resources (PDFs, web links, etc)
+ * These are sent to users via SMS or email when requested during voice calls
+ */
+
+export interface WellnessResource {
+  title: string;
+  description: string;
+  url: string; // Link to PDF, article, or webpage
+  type: 'pdf' | 'article' | 'video' | 'guide';
+  topics: string[]; // Keywords this resource covers
+}
+
+export const WELLNESS_RESOURCES: Record<string, WellnessResource[]> = {
+  // Mental Health & Emotions
+  depression: [
+    {
+      title: "Understanding Depression",
+      description: "A comprehensive guide to depression symptoms, causes, and treatment options.",
+      url: "https://www.nimh.nih.gov/health/publications/depression",
+      type: "guide",
+      topics: ["depression", "mental health", "sadness", "mood"],
+    },
+    {
+      title: "Daily Tips for Managing Depression",
+      description: "Practical strategies for coping with depression in daily life.",
+      url: "https://www.mind.org.uk/information-support/types-of-mental-health-problems/depression/self-care/",
+      type: "article",
+      topics: ["depression", "coping", "self-care", "wellness"],
+    },
+  ],
+  anxiety: [
+    {
+      title: "Managing Anxiety: Evidence-Based Techniques",
+      description: "Learn breathing exercises, grounding techniques, and cognitive strategies.",
+      url: "https://www.adaa.org/understanding-anxiety",
+      type: "guide",
+      topics: ["anxiety", "panic", "stress", "worry"],
+    },
+    {
+      title: "5-4-3-2-1 Grounding Technique",
+      description: "Step-by-step instructions for the grounding technique to calm anxiety.",
+      url: "https://www.mentalhealthamerica.net/grounding-techniques",
+      type: "article",
+      topics: ["anxiety", "grounding", "calming", "panic"],
+    },
+  ],
+  loneliness: [
+    {
+      title: "Combating Loneliness: A Practical Guide",
+      description: "Strategies for building connections and reducing feelings of isolation.",
+      url: "https://www.bbc.com/bitesize/articles/z9n8n9q",
+      type: "guide",
+      topics: ["loneliness", "connection", "isolation", "community"],
+    },
+    {
+      title: "Finding Community and Support Groups",
+      description: "How to find local and online support communities.",
+      url: "https://www.supportgroups.com/",
+      type: "article",
+      topics: ["loneliness", "support", "community", "connection"],
+    },
+  ],
+  sleep: [
+    {
+      title: "Sleep Hygiene Guide",
+      description: "Evidence-based tips for improving sleep quality and duration.",
+      url: "https://www.sleepfoundation.org/sleep-hygiene",
+      type: "guide",
+      topics: ["sleep", "insomnia", "rest", "health"],
+    },
+    {
+      title: "Bedtime Routine Ideas",
+      description: "Create a calming routine to prepare for better sleep.",
+      url: "https://www.aasm.org/what-is-sleep/",
+      type: "article",
+      topics: ["sleep", "routine", "relaxation", "wellness"],
+    },
+  ],
+  grief: [
+    {
+      title: "Understanding Grief and Loss",
+      description: "A compassionate guide to navigating the grieving process.",
+      url: "https://www.webmd.com/mental-health/grief-loss",
+      type: "guide",
+      topics: ["grief", "loss", "bereavement", "mourning"],
+    },
+    {
+      title: "Coping with Loss: Resources and Support",
+      description: "Finding support and healing after loss.",
+      url: "https://www.griefshare.org/",
+      type: "article",
+      topics: ["grief", "loss", "support", "healing"],
+    },
+  ],
+
+  // Physical Health
+  nutrition: [
+    {
+      title: "Healthy Eating for Wellness",
+      description: "Nutrition basics and meal planning tips.",
+      url: "https://www.heart.org/en/healthy-living/healthy-eating",
+      type: "guide",
+      topics: ["nutrition", "diet", "health", "eating"],
+    },
+  ],
+  exercise: [
+    {
+      title: "Exercise Benefits for Mental & Physical Health",
+      description: "How movement improves overall wellbeing.",
+      url: "https://www.cdc.gov/physicalactivity/basics/",
+      type: "guide",
+      topics: ["exercise", "fitness", "movement", "activity"],
+    },
+  ],
+
+  // Elder Care & Specific Populations
+  elderly: [
+    {
+      title: "Healthy Aging Guide",
+      description: "Tips for maintaining health and independence in older age.",
+      url: "https://www.nia.nih.gov/health/healthy-aging",
+      type: "guide",
+      topics: ["elderly", "aging", "senior care", "health"],
+    },
+  ],
+
+  // Crises
+  crisis: [
+    {
+      title: "Crisis Resources & Hotlines",
+      description: "Immediate help when you need it most.",
+      url: "https://www.samhsa.gov/find-help/national-helpline",
+      type: "guide",
+      topics: ["crisis", "emergency", "help", "support"],
+    },
+  ],
+};
+
+/**
+ * Find relevant resources based on detected topics or keywords
+ * @param topics - Array of topic keywords detected from conversation
+ * @returns Array of matching resources
+ */
+export function getRelevantResources(topics: string[]): WellnessResource[] {
+  const resources = new Set<WellnessResource>();
+  
+  topics.forEach(topic => {
+    const normalizedTopic = topic.toLowerCase().trim();
+    const matchingResources = WELLNESS_RESOURCES[normalizedTopic] || [];
+    matchingResources.forEach(r => resources.add(r));
+  });
+  
+  return Array.from(resources);
+}
+
+/**
+ * Format resources for display/delivery
+ * @param resources - Array of resources
+ * @returns Formatted text for SMS or email
+ */
+export function formatResourcesForDelivery(
+  resources: WellnessResource[],
+  deliveryMethod: 'sms' | 'email'
+): string {
+  if (resources.length === 0) {
+    return "No resources available for this topic.";
+  }
+
+  if (deliveryMethod === 'sms') {
+    // SMS needs to be concise
+    return resources
+      .slice(0, 2) // Limit to 2 resources for SMS
+      .map((r, i) => `${i + 1}. ${r.title}\n${r.url}`)
+      .join("\n\n");
+  } else {
+    // Email can be more detailed
+    return resources
+      .map(
+        (r) =>
+          `📚 ${r.title}\n${r.description}\n🔗 ${r.url}\nType: ${r.type}\n`
+      )
+      .join("\n---\n\n");
+  }
+}
+--- END OF FILE utils/resourceLibrary.ts ---
+
+
+--- START OF FILE components/VoiceDemo.tsx ---
+import React, { useState, useRef, useEffect, memo } from 'react';
+import { GoogleGenAI, LiveServerMessage, Modality, Blob } from '@google/genai';
+import { VOICE_PRESETS, BASE_SYSTEM_INSTRUCTION } from '../constants';
+
+// --- Helper Functions for Audio Processing ---
+function createBlob(data: Float32Array): Blob {
+  const l = data.length;
+  const int16 = new Int16Array(l);
+  for (let i = 0; i < l; i++) {
+    // Clamp values to [-1, 1] range before scaling to Int16
+    const s = Math.max(-1, Math.min(1, data[i]));
+    int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+  }
+  return {
+    data: encode(new Uint8Array(int16.buffer)),
+    mimeType: 'audio/pcm;rate=16000',
+  };
+}
+
+function encode(bytes: Uint8Array) {
+  let binary = '';
+  const len = bytes.byteLength;
+  for (let i = 0; i < len; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
+function decode(base64: string) {
+  const binaryString = atob(base64);
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes;
+}
+
+async function decodeAudioData(
+  data: Uint8Array,
+  ctx: AudioContext,
+  sampleRate: number,
+  numChannels: number,
+): Promise<AudioBuffer> {
+  const dataInt16 = new Int16Array(data.buffer);
+  const frameCount = dataInt16.length / numChannels;
+  const buffer = ctx.createBuffer(numChannels, frameCount, sampleRate);
+
+  for (let channel = 0; channel < numChannels; channel++) {
+    const channelData = buffer.getChannelData(channel);
+    for (let i = 0; i < frameCount; i++) {
+      channelData[i] = dataInt16[i * numChannels + channel] / 32768.0;
+    }
+  }
+  return buffer;
+}
+
+// --- Waveform Visualizer ---
+const Visualizer = memo(({ isActive }: { isActive: boolean }) => {
+  return (
+    <div className="flex items-center justify-center gap-1 h-12">
+      {[1, 2, 3, 4, 5].map((i) => (
+        <div
+          key={i}
+          className={`w-1 rounded-full transition-all duration-150 ${
+            isActive ? 'bg-wellness-blue animate-pulse' : 'bg-slate-300 h-1'
+          }`}
+          style={{
+            height: isActive ? `${Math.random() * 24 + 8}px` : '4px',
+            animationDuration: `${0.5 + Math.random() * 0.5}s` 
+          }}
+        />
+      ))}
+    </div>
+  );
+});
+
+Visualizer.displayName = "Visualizer";
+
+const VoiceDemo: React.FC = () => {
+  const [isConnected, setIsConnected] = useState(false);
+  const [isTalking, setIsTalking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [selectedVoiceId, setSelectedVoiceId] = useState(VOICE_PRESETS[0].id);
+  const [detectedTopics, setDetectedTopics] = useState<string[]>([]);
+  const [showResourceOptions, setShowResourceOptions] = useState(false);
+  const [deliveryMethod, setDeliveryMethod] = useState<'sms' | 'email'>('sms');
+  const [resourceContact, setResourceContact] = useState('');
+  const [sendingResources, setSendingResources] = useState(false);
+  
+  // Refs for Audio Contexts and cleanup
+  const inputAudioContextRef = useRef<AudioContext | null>(null);
+  const outputAudioContextRef = useRef<AudioContext | null>(null);
+  const nextStartTimeRef = useRef<number>(0);
+  const sourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
+  const activeSessionRef = useRef<any>(null); 
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+
+  const selectedVoice = VOICE_PRESETS.find(v => v.id === selectedVoiceId) || VOICE_PRESETS[0];
+
+  const stopAudio = () => {
+    if (activeSessionRef.current) {
+      try {
+        activeSessionRef.current.close();
+        console.log("Session closed explicitly");
+      } catch (e) {
+        console.warn("Error closing session:", e);
+      }
+      activeSessionRef.current = null;
+    }
+
+    sourcesRef.current.forEach(source => {
+      try { source.stop(); } catch(e) {}
+    });
+    sourcesRef.current.clear();
+
+    inputAudioContextRef.current?.close();
+    outputAudioContextRef.current?.close();
+    inputAudioContextRef.current = null;
+    outputAudioContextRef.current = null;
+
+    if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach(track => {
+            try { track.stop(); } catch(e) {}
+        });
+        mediaStreamRef.current = null;
+    }
+    
+    setIsConnected(false);
+    setIsTalking(false);
+    nextStartTimeRef.current = 0;
+  };
+
+  const sendResources = async (topics: string[]) => {
+    if (!resourceContact) {
+      setError('Please enter your contact information');
+      return;
+    }
+
+    setSendingResources(true);
+    setError(null);
+
+    try {
+      const response = await fetch(`${process.env.VITE_API_URL}/api/send-resources`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: 'demo-user',
+          topics,
+          deliveryMethod,
+          recipientContact: resourceContact,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        if (response.status === 403) {
+          setError('This feature requires a subscription. Please upgrade to access wellness resources.');
+        } else {
+          setError(data.error || 'Failed to send resources');
+        }
+      } else {
+        setError(null);
+        setShowResourceOptions(false);
+        setResourceContact('');
+        const successMsg = `✅ ${data.resources.length} resources sent via ${deliveryMethod}!`;
+        setError(null);
+        alert(successMsg);
+      }
+    } catch (err) {
+      console.error('Error sending resources:', err);
+      setError('Connection error. Please try again.');
+    } finally {
+      setSendingResources(false);
+    }
+  };
+
+  const startInteraction = async () => {
+    setError(null);
+    try {
+      const apiKey = process.env.API_KEY;
+      if (!apiKey) {
+        throw new Error("API Key not found in environment.");
+      }
+
+      const ai = new GoogleGenAI({ apiKey });
+
+      const inputCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
+      const outputCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+      
+      inputAudioContextRef.current = inputCtx;
+      outputAudioContextRef.current = outputCtx;
+      
+      const outputNode = outputCtx.createGain();
+      outputNode.connect(outputCtx.destination);
+
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaStreamRef.current = stream;
+
+      setIsConnected(true);
+
+      const sessionPromise = ai.live.connect({
+        model: 'gemini-2.5-flash-native-audio-preview-09-2025',
+        callbacks: {
+          onopen: () => {
+            console.log("Gemini Live Connected");
+            const source = inputCtx.createMediaStreamSource(stream);
+            const scriptProcessor = inputCtx.createScriptProcessor(4096, 1, 1);
+            
+            scriptProcessor.onaudioprocess = (e) => {
+              if (!inputAudioContextRef.current) return;
+
+              const inputData = e.inputBuffer.getChannelData(0);
+              
+              const amplitude = Array.from(inputData).reduce((sum, val) => sum + Math.abs(val), 0) / inputData.length;
+              if (amplitude > 0.02) {
+                sourcesRef.current.forEach(source => {
+                  try { source.stop(); } catch(e) {}
+                });
+                sourcesRef.current.clear();
+                setIsTalking(false);
+              }
+              
+              const pcmBlob = createBlob(inputData);
+              sessionPromise.then(session => {
+                  session.sendRealtimeInput({ media: pcmBlob });
+              });
+            };
+
+            source.connect(scriptProcessor);
+            scriptProcessor.connect(inputCtx.destination);
+          },
+          onmessage: async (message: LiveServerMessage) => {
+            const base64Audio = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
+            if (base64Audio) {
+               setIsTalking(true);
+               
+               if (outputCtx.state === 'running') {
+                 nextStartTimeRef.current = Math.max(nextStartTimeRef.current, outputCtx.currentTime);
+               }
+
+               const audioBuffer = await decodeAudioData(
+                 decode(base64Audio),
+                 outputCtx,
+                 24000,
+                 1
+               );
+
+               const source = outputCtx.createBufferSource();
+               source.buffer = audioBuffer;
+               source.connect(outputNode);
+               
+               source.addEventListener('ended', () => {
+                 sourcesRef.current.delete(source);
+                 if (sourcesRef.current.size === 0) {
+                    setIsTalking(false);
+                 }
+               });
+
+               source.start(nextStartTimeRef.current);
+               nextStartTimeRef.current += audioBuffer.duration;
+               sourcesRef.current.add(source);
+            }
+          },
+          onclose: () => {
+             console.log("Gemini Live Closed");
+             setTimeout(() => {
+                if (inputAudioContextRef.current) {
+                     stopAudio();
+                }
+             }, 0);
+          },
+          onerror: (e) => {
+             console.error("Gemini Live Error", e);
+             setError("Connection lost. Please try again.");
+             stopAudio();
+          }
+        },
+        config: {
+          responseModalities: [Modality.AUDIO],
+          speechConfig: {
+            voiceConfig: { prebuiltVoiceConfig: { voiceName: selectedVoiceId } },
+          },
+          systemInstruction: `You are MyParallel. ${selectedVoice.systemInstruction} Keep responses relatively short, natural, and conversational. Do not sound like a robot. 
+
+If the user mentions any of these wellness topics: depression, anxiety, loneliness, sleep issues, grief, nutrition, or exercise - immediately follow up by offering to send them helpful resources. Say something like: "Would you like me to send you some helpful resources about this? I can send them via text or email."
+
+After each response, analyze the conversation for wellness topics and be ready to help the user get resources. ${BASE_SYSTEM_INSTRUCTION}`,
+        },
+      });
+      
+      sessionPromise.then(session => {
+        if (!inputAudioContextRef.current) {
+            console.log("Connection established after stop command. Terminating session.");
+            session.close();
+            return;
+        }
+        activeSessionRef.current = session;
+      });
+
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || "Failed to start audio session.");
+      stopAudio();
+    }
+  };
+
+  useEffect(() => {
+    return () => stopAudio();
+  }, []);
+
+  return (
+    <section id="voice-demo" className="py-24 bg-slate-50 relative overflow-hidden border-t border-slate-200">
+      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-full max-w-4xl bg-blue-100 blur-[100px] pointer-events-none opacity-50"></div>
+
+      <div className="container mx-auto px-6 text-center relative z-10">
+        <h2 className="text-3xl md:text-5xl font-bold mb-6 text-slate-900">Hear the Connection</h2>
+        <p className="text-slate-500 max-w-2xl mx-auto mb-10">
+          Select a voice profile below. The emotions adapt to the personality you choose.
+          <br/> <span className="text-xs text-slate-400 uppercase tracking-widest mt-2 block">Powered by Gemini 2.5 Flash Native Audio</span>
+        </p>
+
+        <div className="flex flex-col items-center justify-center">
+          
+          <div className="flex flex-wrap justify-center gap-3 mb-10 max-w-3xl">
+             {VOICE_PRESETS.map((voice) => (
+                <button
+                  key={voice.id}
+                  onClick={() => !isConnected && setSelectedVoiceId(voice.id)}
+                  disabled={isConnected}
+                  className={`flex flex-col items-start px-4 py-3 rounded-xl border transition-all ${
+                    selectedVoiceId === voice.id 
+                    ? 'bg-white border-wellness-blue ring-1 ring-wellness-blue shadow-md' 
+                    : 'bg-white/50 border-slate-200 hover:border-slate-400'
+                  } ${isConnected ? 'cursor-not-allowed opacity-50' : ''}`}
+                >
+                  <span className="text-sm font-bold text-slate-900">{voice.label}</span>
+                  <span className="text-xs text-slate-500">{voice.desc}</span>
+                  <span className="text-xs text-slate-400 mt-1">👤 {voice.gender}</span>
+                </button>
+             ))}
+          </div>
+
+          <div className="w-64 h-64 rounded-full border border-slate-200 bg-white shadow-xl flex items-center justify-center relative transition-all">
+            
+            {isConnected && (
+               <div className="absolute inset-0 rounded-full border border-wellness-blue animate-ping opacity-20"></div>
+            )}
+            
+            <div className="flex flex-col items-center gap-4">
+               <Visualizer isActive={isTalking || isConnected} />
+               <div className="text-sm font-mono text-slate-500 tracking-widest uppercase">
+                  {isConnected ? (isTalking ? `${selectedVoice.label} Speaking` : "Listening...") : "Offline"}
+               </div>
+            </div>
+
+          </div>
+
+          <div className="mt-10 flex flex-col items-center gap-4">
+            {!isConnected ? (
+              <button
+                onClick={startInteraction}
+                className="group relative px-8 py-3 bg-slate-900 text-white font-bold rounded-full overflow-hidden transition-all hover:scale-105 active:scale-95 shadow-lg"
+              >
+                 <span className="relative z-10 flex items-center gap-2">
+                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" /></svg>
+                   Start Conversation
+                 </span>
+              </button>
+            ) : (
+              <button
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  console.log("End Call clicked");
+                  stopAudio();
+                }}
+                className="px-8 py-3 bg-red-500 hover:bg-red-600 text-white font-bold rounded-full transition-all hover:scale-105 active:scale-95 shadow-lg"
+              >
+                🔴 End Call
+              </button>
+            )}
+            
+            {error && <p className="text-red-500 text-sm">{error}</p>}
+            <p className="text-xs text-slate-400 max-w-xs text-center">
+              Requires microphone access.
+            </p>
+
+            {isConnected && (
+              <div className="mt-8 p-4 bg-green-50 border border-green-200 rounded-lg max-w-sm">
+                <p className="text-sm font-semibold text-green-900 mb-3">Get Wellness Resources</p>
+                
+                <div className="space-y-3">
+                  <div className="flex gap-2">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="delivery"
+                        value="sms"
+                        checked={deliveryMethod === 'sms'}
+                        onChange={(e) => setDeliveryMethod('sms')}
+                        className="w-4 h-4"
+                      />
+                      <span className="text-sm text-green-900">Send via SMS</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="delivery"
+                        value="email"
+                        checked={deliveryMethod === 'email'}
+                        onChange={(e) => setDeliveryMethod('email')}
+                        className="w-4 h-4"
+                      />
+                      <span className="text-sm text-green-900">Send via Email</span>
+                    </label>
+                  </div>
+
+                  <input
+                    type={deliveryMethod === 'sms' ? 'tel' : 'email'}
+                    placeholder={deliveryMethod === 'sms' ? '+1 (555) 123-4567' : 'your@email.com'}
+                    value={resourceContact}
+                    onChange={(e) => setResourceContact(e.target.value)}
+                    className="w-full px-3 py-2 border border-green-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                  />
+
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => sendResources(['depression', 'anxiety', 'loneliness'])}
+                      disabled={!resourceContact || sendingResources}
+                      className="flex-1 px-3 py-2 bg-green-600 hover:bg-green-700 disabled:bg-slate-300 text-white text-sm font-semibold rounded transition-all"
+                    >
+                      {sendingResources ? 'Sending...' : 'Send Resources'}
+                    </button>
+                    <button
+                      onClick={() => setShowResourceOptions(false)}
+                      className="px-3 py-2 bg-slate-300 hover:bg-slate-400 text-slate-900 text-sm rounded transition-all"
+                    >
+                      Close
+                    </button>
+                  </div>
+
+                  <p className="text-xs text-green-700">
+                    💡 Resources are tailored to topics discussed in our conversation.
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+
+        </div>
+      </div>
+    </section>
+  );
+};
+
+export default VoiceDemo;
+--- END OF FILE components/VoiceDemo.tsx ---
+
+
+--- START OF FILE backend-server.js (KEY ENDPOINT SECTION) ---
+// --- Send Wellness Resources via SMS or Email ---
+app.post('/api/send-resources', async (req, res) => {
+  const { userId, topics, deliveryMethod, recipientContact } = req.body;
+  
+  if (!userId || !topics || !deliveryMethod || !recipientContact) {
+    return res.status(400).json({ 
+      error: 'Missing required fields: userId, topics, deliveryMethod, recipientContact' 
+    });
+  }
+
+  if (!['sms', 'email'].includes(deliveryMethod)) {
+    return res.status(400).json({ error: 'deliveryMethod must be "sms" or "email"' });
+  }
+
+  try {
+    // Check user's subscription status
+    if (!supabase) {
+      return res.status(500).json({ error: 'Database not configured' });
+    }
+
+    const { data: userProfile, error: profileError } = await supabase
+      .from('user_profiles')
+      .select('stripe_subscription_id, full_name, email')
+      .eq('id', userId)
+      .single();
+
+    if (profileError || !userProfile) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Check if user has active subscription
+    if (!userProfile.stripe_subscription_id) {
+      return res.status(403).json({ 
+        error: 'This feature requires an active subscription. Please upgrade to access wellness resources.' 
+      });
+    }
+
+    // Get relevant resources based on topics
+    const resourceLibrary = {
+      depression: [
+        { title: "Understanding Depression", url: "https://www.nimh.nih.gov/health/publications/depression", type: "guide" },
+        { title: "Daily Tips for Managing Depression", url: "https://www.mind.org.uk/information-support/types-of-mental-health-problems/depression/self-care/", type: "article" },
+      ],
+      anxiety: [
+        { title: "Managing Anxiety: Evidence-Based Techniques", url: "https://www.adaa.org/understanding-anxiety", type: "guide" },
+        { title: "5-4-3-2-1 Grounding Technique", url: "https://www.mentalhealthamerica.net/grounding-techniques", type: "article" },
+      ],
+      loneliness: [
+        { title: "Combating Loneliness: A Practical Guide", url: "https://www.bbc.com/bitesize/articles/z9n8n9q", type: "guide" },
+        { title: "Finding Community and Support Groups", url: "https://www.supportgroups.com/", type: "article" },
+      ],
+      sleep: [
+        { title: "Sleep Hygiene Guide", url: "https://www.sleepfoundation.org/sleep-hygiene", type: "guide" },
+        { title: "Bedtime Routine Ideas", url: "https://www.aasm.org/what-is-sleep/", type: "article" },
+      ],
+      grief: [
+        { title: "Understanding Grief and Loss", url: "https://www.webmd.com/mental-health/grief-loss", type: "guide" },
+        { title: "Coping with Loss: Resources and Support", url: "https://www.griefshare.org/", type: "article" },
+      ],
+    };
+
+    // Collect resources for requested topics
+    const resources = [];
+    const normalizedTopics = topics.map(t => t.toLowerCase().trim());
+    
+    normalizedTopics.forEach(topic => {
+      if (resourceLibrary[topic]) {
+        resources.push(...resourceLibrary[topic]);
+      }
+    });
+
+    if (resources.length === 0) {
+      return res.status(400).json({ error: 'No resources found for requested topics' });
+    }
+
+    // Format message
+    const resourceText = resources
+      .map(r => `📚 ${r.title}\n🔗 ${r.url}`)
+      .join("\n\n");
+
+    const message = `Hi ${userProfile.full_name || 'there'}! 👋\n\nHere are some helpful resources based on our conversation:\n\n${resourceText}\n\nWe're here for you. Take care! 💚\n- MyParallel`;
+
+    // Send via SMS or Email
+    if (deliveryMethod === 'sms') {
+      if (!twilioClient) {
+        return res.status(500).json({ error: 'SMS service not configured' });
+      }
+
+      await twilioClient.messages.create({
+        body: message,
+        from: process.env.TWILIO_PHONE_NUMBER || '+12345678900',
+        to: recipientContact,
+      });
+
+      console.log(`Resources sent via SMS to ${recipientContact}`);
+    } else if (deliveryMethod === 'email') {
+      console.log(`Email to ${recipientContact}:\nSubject: Your MyParallel Wellness Resources\n\n${message}`);
+    }
+
+    // Save resource delivery log to database
+    const { error: logError } = await supabase
+      .from('resource_deliveries')
+      .insert({
+        user_id: userId,
+        topics: normalizedTopics,
+        delivery_method: deliveryMethod,
+        recipient_contact: recipientContact,
+        resources_sent: resources.length,
+        created_at: new Date().toISOString(),
+      });
+
+    if (logError) {
+      console.warn('Could not log resource delivery:', logError);
+    }
+
+    res.json({
+      success: true,
+      message: `${resources.length} resources sent via ${deliveryMethod}`,
+      resources: resources,
+      deliveredTo: recipientContact,
+    });
+  } catch (err) {
+    console.error('Resource send error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+--- END OF FILE backend-server.js (KEY ENDPOINT SECTION) ---
+
+
+--- START OF FILE supabase-schema.sql (NEW TABLE) ---
+-- Create resource_deliveries table to track wellness resource sends
+CREATE TABLE IF NOT EXISTS resource_deliveries (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES user_profiles(id) ON DELETE CASCADE,
+  topics TEXT[] NOT NULL,
+  delivery_method TEXT NOT NULL CHECK (delivery_method IN ('sms', 'email')),
+  recipient_contact TEXT NOT NULL,
+  resources_sent INTEGER NOT NULL,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Enable Row Level Security
+ALTER TABLE resource_deliveries ENABLE ROW LEVEL SECURITY;
+
+-- Create policy to allow all operations (can be locked down later)
+CREATE POLICY "allow_all" ON resource_deliveries
+  FOR ALL
+  USING (true)
+  WITH CHECK (true);
+
+-- Create index for faster lookups
+CREATE INDEX IF NOT EXISTS idx_resource_deliveries_user_id ON resource_deliveries(user_id);
+CREATE INDEX IF NOT EXISTS idx_resource_deliveries_created_at ON resource_deliveries(created_at);
+--- END OF FILE supabase-schema.sql (NEW TABLE) ---
+
+
+--- START OF FILE VoiceDemo.tsx MODIFICATIONS SUMMARY ---
+KEY CHANGES TO ADD TO VOICEDEMO COMPONENT:
+
+1. NEW STATE VARIABLES (add to component):
+   const [detectedTopics, setDetectedTopics] = useState<string[]>([]);
+   const [showResourceOptions, setShowResourceOptions] = useState(false);
+   const [deliveryMethod, setDeliveryMethod] = useState<'sms' | 'email'>('sms');
+   const [resourceContact, setResourceContact] = useState('');
+   const [sendingResources, setSendingResources] = useState(false);
+
+2. NEW FUNCTION (add before useEffect):
+   const sendResources = async (topics: string[]) => {
+     // Makes POST request to /api/send-resources
+     // Validates subscription
+     // Sends SMS or Email
+     // See full code above
+
+3. SYSTEM INSTRUCTION UPDATE (in startInteraction function):
+   Replace the systemInstruction with the one that includes resource detection logic:
+   `If the user mentions any of these wellness topics: depression, anxiety, loneliness, 
+    sleep issues, grief, nutrition, or exercise - immediately follow up by offering 
+    to send them helpful resources.`
+
+4. RESOURCE PANEL UI (add before closing section tag):
+   {isConnected && (
+     <div className="mt-8 p-4 bg-green-50 border border-green-200 rounded-lg max-w-sm">
+       // SMS/Email radio buttons
+       // Contact input field
+       // Send Resources button
+       // See full code above
+
+5. AUDIO INTERRUPT DETECTION (in scriptProcessor.onaudioprocess):
+   Added amplitude detection to stop AI audio when user starts speaking:
+   const amplitude = Array.from(inputData).reduce(...) / inputData.length;
+   if (amplitude > 0.02) { // Interrupt AI
+     sourcesRef.current.forEach(source => { source.stop(); });
+   }
+--- END OF FILE VoiceDemo.tsx MODIFICATIONS SUMMARY ---

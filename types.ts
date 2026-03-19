@@ -1,55 +1,23 @@
-
-export enum Gender {
-  MALE = 'Male',
-  FEMALE = 'Female',
-  NON_BINARY = 'Non-binary',
-  ANDROGYNOUS = 'Androgynous',
+export enum SupportStyle {
+  FRIENDLY = 'Friendly & Warm',
+  MOTIVATIONAL = 'Motivational Coach',
+  CALM = 'Calm & Gentle',
+  ELDERLY_FOCUS = 'Elderly Support',
+  MEDICAL = 'Medical/Routine Focused',
+  LISTENER = 'Quiet Listener',
 }
 
-export enum Personality {
-  SWEET = 'Sweet',
-  BOLD = 'Bold',
-  DOMINANT = 'Dominant',
-  MYSTERIOUS = 'Mysterious',
-  INTELLECTUAL = 'Intellectual',
-  NURTURING = 'Nurturing',
-  REBELLIOUS = 'Rebellious',
-  PLAYFUL = 'Playful',
-  SARCASTIC = 'Sarcastic',
-  SPIRITUAL = 'Spiritual',
+export enum CheckInFrequency {
+  LOW = 'Once a day',
+  MEDIUM = 'Morning & Evening',
+  HIGH = 'Multiple times per day',
 }
 
-export enum CommStyle {
-  FLIRTY = 'Flirty',
-  SUPPORTIVE = 'Supportive',
-  WITTY = 'Witty',
-  STOIC = 'Stoic',
-  SENSUAL = 'Sensual',
-  GENTLE = 'Gentle',
-  CHAOTIC = 'Chaotic',
-  PHILOSOPHICAL = 'Philosophical',
-  LOGICAL = 'Logical',
-  BOLD = 'Bold',
-}
-
-export enum ContentLevel {
-  SAFE = 'Safe (PG-13)',
-  FLIRTY = 'Flirty (R)',
-  UNFILTERED = 'Unfiltered (X)',
-}
-
-export enum Schedule {
-  EARLY_BIRD = 'Early Bird (5AM - 9PM)',
-  NINE_TO_FIVE = 'Standard (8AM - 11PM)',
-  NIGHT_OWL = 'Night Owl (2PM - 4AM)',
-  ALWAYS_ON = 'Insomniac (24/7)',
-}
-
-export enum Punctuality {
-  PRECISE = 'Robotically Precise',
-  RESPONSIBLE = 'Responsible (0-5 min delay)',
-  ORGANIC = 'Organic/Busy (5-20 min delay)',
-  CHAOTIC = 'Chaotic (Unknown delay)',
+export enum VoiceTone {
+  WARM = 'Warm',
+  CALM = 'Calm',
+  CHEERFUL = 'Cheerful',
+  FIRM = 'Firm (for reminders)',
 }
 
 export interface ConversationContext {
@@ -64,56 +32,30 @@ export interface ConversationContext {
 export interface CompanionConfig {
   // Identity
   name: string;
-  gender: Gender;
-  age: number;
-  appearance: string;
-  clothingStyle: string;
   
-  // Personality DNA
-  personalityTraits: string[];
-  expressiveness: number; // 0-100
-  spontaneity: number; // 0-100
+  // Care Profile
+  supportStyle: SupportStyle;
+  checkInFrequency: CheckInFrequency;
   
   // Communication
   voiceId: string;
-  accent: string;
-  commStyle: CommStyle;
-  textLength: 'Short' | 'Paragraphs' | 'Balanced';
-  emojiUsage: 'Never' | 'Occasionally' | 'Often' | 'Constantly';
-  initiationFreq: 'Rarely' | 'Balanced' | 'Aggressive';
+  voiceTone: VoiceTone;
   
-  // Relationship
-  role: string;
-  tone: string;
-  affectionLevel: number; // 0-100
-  jealousyLevel: number; // 0-100
-  contentLevel: ContentLevel;
-  topicsToAvoid: string; // Negative constraints
+  // Wellness Features
+  enableMedicationReminders: boolean;
+  enableHydrationReminders: boolean;
+  enableMealCheckins: boolean;
+  enableSleepSupport: boolean; // Night companion
   
-  // Life Sim
-  occupation: string;
-  schedule: Schedule;
-  punctuality: Punctuality;
-  backstory: string;
-  enableCalendar: boolean; // Calendar Access
-  enableHealthReminders: boolean; // Meds/Hydration
-  
-  // Elderly & Safety
-  enableElderlyMode: boolean;
-  enableConfusionMonitoring: boolean;
-  enableFamilyDashboard: boolean;
-  enableNightCompanion: boolean;
+  // Safety
+  enableSafetyNet: boolean; // "I haven't heard from you"
+  enableFamilyDashboard: boolean; // Optional family view
 
-  // Meta
-  coreMemories: string;
+  // Context
+  userNeeds: string; // "I have anxiety", "I am recovering from surgery"
   userNickname: string;
-  enablePhotos: boolean;
+  enablePhotos: boolean; // Calming images (nature, pets)
   enableVoiceCalls: boolean;
-}
-
-export interface VisualizerState {
-  isSpeaking: boolean;
-  volume: number;
 }
 
 export interface SubscriptionPlan {
@@ -125,4 +67,41 @@ export interface SubscriptionPlan {
   features: string[];
   recommended?: boolean;
   highlight?: string;
+}
+
+export interface Medication {
+  name: string;
+  dosage: string;
+  schedule: string;
+}
+
+// UserProfile matches Supabase user_profiles table schema exactly
+export interface UserProfile {
+  id?: string;
+  created_at?: string;
+  full_name: string;
+  preferred_name?: string | null;
+  age?: number | null;
+  caregiver_name?: string | null;
+  caregiver_phone?: string | null;
+  caregiver_email?: string | null;
+  conditions: string[];
+  medications: Medication[] | null;
+  loneliness_level?: number | null;
+  mobility_issues?: boolean | null;
+  cognitive_status?: "normal" | "mild" | "moderate" | "severe" | null;
+  notes?: string | null;
+  selected_voice?: string | null;
+  selected_personality?: string | null;
+  google_calendar_enabled?: boolean | null;
+  apple_calendar_enabled?: boolean | null;
+  emergency_contact_name?: string | null;
+  emergency_contact_phone?: string | null;
+  phone_number?: string | null;
+  timezone?: string | null;
+  checkin_times?: string[] | null;
+  stripe_customer_id?: string | null;
+  stripe_subscription_id?: string | null;
+  stripe_features?: string[] | null;
+  updated_at?: string;
 }

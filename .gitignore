@@ -1,3 +1,5 @@
+# SECRETS
+.env*
 # Logs
 logs
 *.log
@@ -22,5 +24,4 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
-.env
-node_modules
+.vercel

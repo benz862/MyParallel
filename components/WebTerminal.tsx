@@ -1,7 +1,10 @@
-
 import React, { useState, useRef, useEffect } from 'react';
-import { GoogleGenAI } from '@google/genai';
-import { SAFETY_SYSTEM_INSTRUCTION, CRISIS_KEYWORDS, MOCK_MEMORY_STATE } from '../constants';
+import { useAuth } from '../contexts/AuthContext';
+import { supabase } from '../utils/supabase';
+import VoiceDemo from './VoiceDemo';
+import CaregiverCalendar from './CaregiverCalendar';
+import BulkPatientUploader from './BulkPatientUploader';
+import UserIntakeForm from './UserIntakeForm';
 
 interface ChatMessage {
   sender: 'user' | 'ai' | 'system';
@@ -11,295 +14,406 @@ interface ChatMessage {
 }
 
 const WebTerminal: React.FC = () => {
+  const { user } = useAuth();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [isCalling, setIsCalling] = useState(false);
+  const [syncStatus, setSyncStatus] = useState('Syncing...');
   
-  // Connection State
-  const [uplinkUrl, setUplinkUrl] = useState('http://localhost:8080');
-  const [showConfig, setShowConfig] = useState(false);
-  const [tempUrl, setTempUrl] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState<string | null>(null);
+  const [personality, setPersonality] = useState<string | null>(null);
+  const [showBrowserVoice, setShowBrowserVoice] = useState(false);
+  const [showIntake, setShowIntake] = useState(false);
+  const [editingPatientId, setEditingPatientId] = useState<string | null>(null);
   
-  const [syncStatus, setSyncStatus] = useState('INITIALIZING...');
-  
+  const [patients, setPatients] = useState<any[]>([]);
+  const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
+
   const scrollRef = useRef<HTMLDivElement>(null);
-  const chatRef = useRef<any>(null);
+  const UPLINK_URL = import.meta.env.DEV ? 'http://localhost:8081' : '';
 
-  // Load saved URL on mount
+  // Fetch all patients assigned to this caregiver (or the user themselves)
   useEffect(() => {
-    const saved = localStorage.getItem('parallel_uplink');
-    if (saved) {
-        setUplinkUrl(saved);
-        setTempUrl(saved);
-    }
-  }, []);
+    if (!user) return;
+    const fetchProfiles = async () => {
+      const { data, error } = await supabase
+        .from('user_profiles')
+        .select('*')
+        .or(`id.eq.${user.id},caregiver_id.eq.${user.id}`);
+      
+      if (!error && data && data.length > 0) {
+        setPatients(data);
+        if (!selectedPatientId) setSelectedPatientId(data[0].id);
+      }
+    };
+    fetchProfiles();
+  }, [user]);
 
-  // Sync with Local Backend
+  // Synchronize active patient context
+  useEffect(() => {
+      if (patients.length > 0 && selectedPatientId) {
+          const p = patients.find(x => x.id === selectedPatientId);
+          if (p) {
+              setPhoneNumber(p.phone_number);
+              setPersonality(p.selected_personality);
+          }
+      }
+  }, [patients, selectedPatientId]);
+
+  // Once we have the phone number, poll the context API
   useEffect(() => {
     let isMounted = true;
+    if (!phoneNumber) return;
 
     const fetchContext = async (isBackgroundPoll = false) => {
-        // Only show "Connecting" on initial load or config change, NOT every 2 seconds
-        if (!isBackgroundPoll) {
-             setSyncStatus('CONNECTING...');
-        }
-
+        if (!isBackgroundPoll) setSyncStatus('Connecting...');
         try {
-            // Append /api/context to the base URL
-            const endpoint = uplinkUrl.replace(/\/$/, '') + '/api/context';
-            
-            // CRITICAL: Add header to bypass Ngrok's "Visit Site" warning page
-            const res = await fetch(endpoint, {
-                headers: {
-                    'ngrok-skip-browser-warning': 'true',
-                    'Content-Type': 'application/json'
-                }
+            const cleanUrl = UPLINK_URL.replace(/\/$/, '');
+            const res = await fetch(`${cleanUrl}/api/context?phoneNumber=${encodeURIComponent(phoneNumber)}`, {
+                method: 'GET',
+                headers: { 'ngrok-skip-browser-warning': 'true', 'Content-Type': 'application/json' }
             });
-
             if (res.ok) {
                 const data = await res.json();
                 if (isMounted) {
-                    setSyncStatus('DATABASE: CONNECTED');
-                    
-                    // Convert DB messages to ChatMessages
+                    setSyncStatus('Live');
                     const dbMessages: ChatMessage[] = data.map((m: any) => ({
-                        sender: m.sender === 'user' ? 'user' : 'ai',
+                        sender: m.sender === 'user' ? 'user' : (m.sender === 'system' ? 'system' : 'ai'),
                         text: m.content || (m.media_url ? '[Photo Sent]' : ''),
                         time: new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
                         mediaUrl: m.media_url
                     }));
-                    
-                    // Only update if we have new data or empty
-                    if (dbMessages.length > 0) {
-                         setMessages(dbMessages);
-                    }
+                    setMessages(dbMessages);
                 }
-            } else {
-                throw new Error("Failed to fetch");
             }
         } catch (e) {
-            if (isMounted) {
-                // If we are on HTTPS but trying to hit HTTP localhost, it's a Mixed Content error
-                const isMixedContent = window.location.protocol === 'https:' && uplinkUrl.includes('localhost');
-                
-                if (isMixedContent) {
-                    setSyncStatus('ERROR: MIXED CONTENT BLOCK');
-                } else {
-                    setSyncStatus('BACKEND OFFLINE (USING MOCK)');
-                }
-
-                // If offline/error, ensure at least one message exists
-                if (messages.length === 0) {
-                   const errorMsg = isMixedContent 
-                        ? "BROWSER SECURITY BLOCK: You are on HTTPS, but the backend is HTTP. Please click the Gear Icon (⚙️) and enter your Ngrok URL."
-                        : "Hey... I can't reach your local database. Make sure 'npm start' is running and Ngrok is connected.";
-                        
-                    // Only add error msg once
-                    setMessages(prev => {
-                        if (prev.length === 0) {
-                             return [{
-                                sender: 'ai',
-                                text: errorMsg,
-                                time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                            }];
-                        }
-                        return prev;
-                    });
-                }
-            }
+            if (isMounted) setSyncStatus('Offline');
         }
     };
     
-    // Initial fetch
     fetchContext(false);
+    const interval = setInterval(() => fetchContext(true), 3000);
     
-    // Background polling
-    const interval = setInterval(() => fetchContext(true), 2000);
-    
-    return () => {
-        isMounted = false;
-        clearInterval(interval);
-    };
-  }, [uplinkUrl]);
+    return () => { isMounted = false; clearInterval(interval); };
+  }, [phoneNumber, UPLINK_URL]);
 
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages, isTyping]);
-
-  const initChat = async () => {
-    if (!chatRef.current) {
-      const apiKey = process.env.API_KEY;
-      if (apiKey) {
-        const ai = new GoogleGenAI({ apiKey });
-        chatRef.current = ai.chats.create({
-          model: 'gemini-2.5-flash',
-          config: {
-            systemInstruction: "You are Parallel. Continue the conversation naturally.",
-          },
-        });
-      }
-    }
-  };
 
   const handleSend = async (e?: React.FormEvent) => {
     e?.preventDefault();
-    if (!input.trim()) return;
+    if (!input.trim() || !phoneNumber) return;
 
-    const userMsg: ChatMessage = {
-      sender: 'user',
-      text: input,
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    };
-
+    const userMsg: ChatMessage = { sender: 'user', text: input, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) };
     setMessages(prev => [...prev, userMsg]);
     setInput('');
     setIsTyping(true);
 
     try {
-      await initChat();
-      if (chatRef.current) {
-        const result = await chatRef.current.sendMessage({ message: input });
-        const aiMsg: ChatMessage = {
-          sender: 'ai',
-          text: result.text,
-          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-        };
-        setMessages(prev => [...prev, aiMsg]);
-      }
-    } catch (err) {
-      console.error("Chat error", err);
-    } finally {
-      setIsTyping(false);
+        const cleanUrl = UPLINK_URL.replace(/\/$/, '');
+        const res = await fetch(`${cleanUrl}/api/dashboard-message`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                phoneNumber,
+                personality,
+                message: input
+            })
+        });
+
+        const data = await res.json();
+        
+        if (data.reply) {
+            const aiMsg: ChatMessage = { sender: 'ai', text: data.reply, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) };
+            // Optional: The background poll will pick it up anyway, but we can optimistically append.
+            setMessages(prev => [...prev, aiMsg]);
+        }
+    } catch (err) { 
+        console.error('Failed to send message:', err); 
+    } finally { 
+        setIsTyping(false); 
     }
   };
 
-  const saveConfig = () => {
-      let finalUrl = tempUrl.trim();
-      // Ensure protocol
-      if (finalUrl && !finalUrl.startsWith('http')) {
-          finalUrl = 'https://' + finalUrl;
-      }
-      setUplinkUrl(finalUrl || 'http://localhost:8080');
-      if (finalUrl) {
-          localStorage.setItem('parallel_uplink', finalUrl);
-      }
-      setShowConfig(false);
-      setMessages([]); // Clear mock data to allow refresh
+  const triggerCall = async () => {
+    if (!phoneNumber) return;
+    setIsCalling(true);
+    try {
+        const cleanUrl = UPLINK_URL.replace(/\/$/, '');
+        const res = await fetch(`${cleanUrl}/api/trigger-call`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ phoneNumber })
+        });
+        const data = await res.json();
+        if (data.success) {
+            // Optimistic message append
+            const aiMsg: ChatMessage = { sender: 'ai', text: "[System] Calling your phone now! Please pick up.", time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) };
+            setMessages(prev => [...prev, aiMsg]);
+        } else {
+            alert('Failed to trigger call: ' + data.error);
+        }
+    } catch (err) {
+        console.error(err);
+        alert('Network error triggering call.');
+    } finally {
+        setIsCalling(false);
+    }
   };
 
+  const handleSavePatient = async (profileData: any) => {
+    try {
+        if (editingPatientId) {
+            const { error } = await supabase.from('user_profiles').update(profileData).eq('id', editingPatientId);
+            if (error) throw error;
+        } else {
+            const { error } = await supabase.from('user_profiles').insert({ ...profileData, caregiver_id: user?.id });
+            if (error) throw error;
+        }
+        setShowIntake(false);
+        setEditingPatientId(null);
+        window.location.reload(); 
+    } catch (err) {
+        console.error("Failed to save patient", err);
+        alert("Failed to save patient. Please try again.");
+    }
+  };
+
+  const handleDeletePatient = async (e: React.MouseEvent, id: string) => {
+      e.stopPropagation();
+      if (!window.confirm("Are you absolutely sure you want to completely delete this patient and all associated intelligence logs? This cannot be undone.")) return;
+
+      try {
+          const { error } = await supabase.from('user_profiles').delete().eq('id', id);
+          if (error) throw error;
+          
+          if (selectedPatientId === id) setSelectedPatientId(null);
+          setPatients(prev => prev.filter(p => p.id !== id));
+      } catch (err) {
+          console.error("Failed to delete patient", err);
+          alert("Failed to physically purge the profile. Check console.");
+      }
+  };
+
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+
+  const downloadLog = () => {
+      const activePatient = patients.find(p => p.id === selectedPatientId);
+      const name = activePatient?.full_name?.split(' ')[0] || 'Patient';
+      const logContent = messages.map(m => `[${m.time}] ${m.sender.toUpperCase()}:\n${m.text}`).join('\n\n-----------------\n\n');
+      const blob = new Blob([logContent], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${name}_Wellness_Transcriptions_Log.txt`;
+      document.body.appendChild(a);
+      a.click();
+      URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+  };
+
+  if (!phoneNumber) {
+      return (
+          <section id="terminal" className="py-24 bg-white relative border-t border-slate-200">
+            <div className="container mx-auto px-6 max-w-4xl text-center">
+                <h2 className="text-3xl font-bold text-slate-800 mb-4">Please set up your phone number!</h2>
+                <p className="text-slate-600">Your Web Dashboard relies on your phone number to fetch your exact conversation history. Please go to your personal info settings and add your phone number to unlock this feature.</p>
+            </div>
+          </section>
+      );
+  }
+
   return (
-    <section id="terminal" className="py-24 bg-neon-dark relative border-t border-white/5">
+    <section id="terminal" className="py-24 bg-white relative border-t border-slate-200">
       <div className="container mx-auto px-6 max-w-6xl">
         <div className="flex flex-col lg:flex-row gap-12 items-start">
           
-          <div className="flex-1 space-y-8 lg:sticky lg:top-24">
-             <div className="inline-block px-3 py-1 rounded-full border border-green-500/30 bg-green-500/10 text-green-500 text-xs font-bold tracking-widest uppercase mb-2">
-                Persistence Engine v2.0
+          <div className="flex-1 space-y-6 w-full max-w-md">
+             <div className="flex justify-between items-center bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
+               <div>
+                 <h2 className="text-2xl font-bold text-slate-800">Your Patients</h2>
+                 <p className="text-sm text-slate-500">Manage your linked companions</p>
+               </div>
+               <button 
+                  onClick={() => { setEditingPatientId(null); setShowIntake(true); }} 
+                  className="px-4 py-2 bg-wellness-blue text-white rounded-xl text-sm font-bold shadow hover:bg-sky-600 transition-colors"
+               >
+                  + Add New Patient
+               </button>
              </div>
-             <h2 className="text-4xl md:text-5xl font-bold text-white tracking-tighter">
-               It remembers <br/>
-               <span className="text-transparent bg-clip-text bg-gradient-to-r from-green-400 to-emerald-600">everything.</span>
-             </h2>
-             <p className="text-lg text-gray-400 font-light">
-               Parallel isn't a series of disconnected chats. It's one continuous stream of consciousness. 
-               <br/><br/>
-               <span className="text-xs text-gray-500">
-                   NOTE: If you see "MIXED CONTENT BLOCK", you must click the Gear icon (⚙️) and add your Ngrok URL.
-               </span>
-             </p>
+             
+             <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden divide-y divide-slate-100">
+                {patients.map(p => (
+                   <div key={p.id} onClick={() => setSelectedPatientId(p.id)} className={`p-5 flex items-center justify-between cursor-pointer hover:bg-slate-50 transition-colors ${selectedPatientId === p.id ? 'bg-sky-50 border-l-4 border-wellness-blue' : ''}`}>
+                       <div>
+                           <div className="font-bold text-slate-800 text-lg">{p.full_name || 'Unnamed'}</div>
+                           <div className="text-xs text-slate-500 flex items-center gap-2 mt-1">
+                               <span>📞 {p.phone_number || 'No Phone'}</span>
+                           </div>
+                       </div>
+                       <div className="flex items-center gap-4">
+                           <button 
+                               onClick={(e) => { e.stopPropagation(); setEditingPatientId(p.id); setShowIntake(true); }} 
+                               className="text-xs text-slate-400 font-bold hover:text-wellness-blue flex items-center gap-1"
+                           >
+                               ✏️ Edit
+                           </button>
+                           <button 
+                               onClick={(e) => handleDeletePatient(e, p.id)} 
+                               className="text-xs text-red-300 font-bold hover:text-red-600 flex items-center gap-1 transition-colors"
+                           >
+                               🗑️ Delete
+                           </button>
+                           {selectedPatientId === p.id && (
+                               <span className="text-xs text-sky-600 font-bold bg-sky-100 px-3 py-1 rounded-full">Viewing Journal →</span>
+                           )}
+                       </div>
+                   </div>
+                ))}
+                {patients.length === 0 && (
+                   <div className="p-8 text-center text-slate-400 text-sm">No patients found. Create one above!</div>
+                )}
+             </div>
+
+             <div className="mt-8 pt-4 border-t border-slate-200">
+                <BulkPatientUploader />
+             </div>
+
+             <div className="mt-8 pt-4 border-t border-slate-200">
+                <CaregiverCalendar patientId={selectedPatientId} />
+             </div>
           </div>
 
-          <div className="flex-1 w-full max-w-xl relative group">
-            <div className="bg-black border border-gray-800 rounded-lg shadow-2xl overflow-hidden font-mono text-sm relative z-10 min-h-[500px] flex flex-col">
-                  
-                  {/* Configuration Overlay */}
-                  {showConfig && (
-                      <div className="absolute inset-0 z-50 bg-black/95 flex items-center justify-center p-6 animate-fadeIn">
-                          <div className="w-full max-w-sm space-y-4">
-                              <h3 className="text-green-500 font-bold uppercase tracking-widest text-center">System Uplink Config</h3>
-                              <p className="text-gray-500 text-xs text-center">
-                                  Enter your Ngrok URL to bridge the browser to your local backend.
-                              </p>
-                              <input 
-                                type="text" 
-                                value={tempUrl}
-                                onChange={(e) => setTempUrl(e.target.value)}
-                                placeholder="https://xxxx.ngrok-free.dev"
-                                className="w-full bg-gray-900 border border-green-500/30 rounded p-3 text-white focus:border-green-500 outline-none"
-                              />
-                              <div className="flex gap-2">
-                                  <button onClick={() => setShowConfig(false)} className="flex-1 py-3 border border-gray-700 text-gray-400 rounded hover:bg-gray-800">Cancel</button>
-                                  <button onClick={saveConfig} className="flex-1 py-3 bg-green-600 text-black font-bold rounded hover:bg-green-500">Connect</button>
-                              </div>
+          <div className="flex-1 w-full max-w-xl">
+            {/* Journal UI */}
+            <div className="bg-white border-2 border-slate-100 rounded-3xl shadow-xl overflow-hidden min-h-[500px] flex flex-col">
+                  {/* Header */}
+                  <div className="bg-slate-50 px-6 py-4 border-b border-slate-100 flex justify-between items-center">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-wellness-blue flex items-center justify-center text-white font-bold">P</div>
+                      <div>
+                          <div className="font-bold text-slate-800 text-sm">Parallel Support</div>
+                          <div className="text-xs text-green-600 flex items-center gap-1">
+                              <span className="w-2 h-2 bg-green-500 rounded-full"></span> Online
                           </div>
+                      </div>
+                    </div>
+                    <div>
+                      <button 
+                        onClick={downloadLog}
+                        className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-bold shadow-sm transition-colors mr-3"
+                      >
+                          📄 Export .TXT Log
+                      </button>
+                      <button 
+                        onClick={() => setShowBrowserVoice(!showBrowserVoice)}
+                        className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-bold shadow-sm transition-colors mr-3"
+                      >
+                          {showBrowserVoice ? 'Close Live Audio' : '🎙️ Live Browser Chat'}
+                      </button>
+                      <button 
+                        onClick={triggerCall}
+                        disabled={isCalling}
+                        className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-full text-sm font-bold shadow-sm transition-colors mb-2 sm:mb-0"
+                      >
+                          {isCalling ? 'Dialing...' : '📞 Call Me Now'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Gemini Live WebRTC Module */}
+                  {showBrowserVoice && selectedPatientId && (
+                      <div className="border-b border-slate-100 bg-slate-50 relative pb-4 animate-fadeIn">
+                          <VoiceDemo 
+                              patientPhone={phoneNumber || undefined}
+                              patientId={selectedPatientId}
+                              patientContextString={`
+USER PROFILE CONTEXT:
+- Name: ${patients.find(p => p.id === selectedPatientId)?.full_name || 'Unknown'}
+- Age: ${patients.find(p => p.id === selectedPatientId)?.age || 'Unknown'}
+- Conditions: ${patients.find(p => p.id === selectedPatientId)?.conditions?.join(', ') || 'None reported'}
+- Medications: ${patients.find(p => p.id === selectedPatientId)?.medications?.join(', ') || 'None reported'}
+- Emergency Contact: ${patients.find(p => p.id === selectedPatientId)?.emergency_contact_name || 'None'}
+- Caregiver: ${patients.find(p => p.id === selectedPatientId)?.caregiver_name || 'Assigned Caregiver'}
+- Notes: ${patients.find(p => p.id === selectedPatientId)?.notes || 'None'}
+                              `}
+                          />
                       </div>
                   )}
 
-                  {/* Header */}
-                  <div className="bg-gray-900 px-4 py-3 border-b border-gray-800 flex justify-between items-center">
-                    <div className="flex items-center gap-3">
-                      <div className={`w-2 h-2 rounded-full transition-colors duration-500 ${syncStatus.includes('CONNECTED') ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></div>
-                      <div className="flex flex-col">
-                        <div className="text-[10px] text-gray-400 tracking-widest uppercase">
-                            {syncStatus}
-                        </div>
-                      </div>
-                    </div>
-                    
-                    {/* Gear Icon */}
-                    <button 
-                        onClick={() => setShowConfig(!showConfig)}
-                        className="text-gray-500 hover:text-white transition-colors p-1"
-                        title="Configure Connection"
-                    >
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-                    </button>
-                  </div>
-
                   {/* Messages */}
-                  <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4 bg-black/50">
+                  <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 space-y-6 bg-white min-h-[300px]">
+                        {messages.length === 0 && !isTyping && (
+                            <div className="text-center text-slate-400 text-sm mt-10">No messages yet. Send a message to start tracking your journey.</div>
+                        )}
                         {messages.map((msg, idx) => (
-                        <div key={idx} className={`flex flex-col ${msg.sender === 'user' ? 'items-end' : msg.sender === 'system' ? 'items-center' : 'items-start'} animate-[fadeIn_0.3s_ease-out]`}>
-                                <div className={`max-w-[90%] px-4 py-3 rounded-lg border leading-relaxed ${
+                        <div key={idx} className={`flex flex-col ${msg.sender === 'user' ? 'items-end' : 'items-start'} animate-fadeIn`}>
+                                <div className={`max-w-[85%] px-5 py-3 rounded-2xl text-sm leading-relaxed shadow-sm ${
                                     msg.sender === 'user'
-                                    ? 'bg-green-900/10 border-green-500/30 text-green-100 rounded-br-none'
-                                    : 'bg-gray-900 border-gray-700 text-gray-300 rounded-bl-none'
+                                    ? 'bg-wellness-blue text-white rounded-br-none'
+                                    : 'bg-slate-100 text-slate-700 rounded-bl-none'
                                 }`}>
                                     {msg.text}
                                     {msg.mediaUrl && (
-                                        <div className="mt-2 rounded overflow-hidden border border-gray-700">
-                                            <img src={msg.mediaUrl} alt="MMS" className="w-full h-auto" />
-                                        </div>
+                                        <img 
+                                            src={msg.mediaUrl} 
+                                            alt="Support Visual" 
+                                            className="mt-3 rounded-xl cursor-pointer hover:opacity-90 max-h-32 object-cover"
+                                            onClick={() => setSelectedImage(msg.mediaUrl!)}
+                                        />
                                     )}
                                 </div>
-                                <span className="text-[10px] text-gray-600 mt-1">{msg.time}</span>
+                                <span className="text-[10px] text-slate-300 mt-1 px-1">{msg.time}</span>
                         </div>
                         ))}
                     {isTyping && (
-                      <div className="flex items-center gap-2 text-gray-500 text-xs pl-2">
-                        <span className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce"></span>
-                      </div>
+                      <div className="text-xs text-slate-400 pl-4 italic">Parallel is writing...</div>
                     )}
                   </div>
 
                   {/* Input */}
-                  <form onSubmit={handleSend} className="p-4 bg-gray-900/50 border-t border-gray-800 flex gap-3">
-                    <span className="text-green-500 py-2">{'>'}</span>
+                  <form onSubmit={handleSend} className="p-4 border-t border-slate-100 bg-white flex gap-2">
                     <input
                       type="text"
                       value={input}
                       onChange={(e) => setInput(e.target.value)}
-                      placeholder="Type response..."
-                      className="flex-1 bg-transparent text-white focus:outline-none placeholder-gray-600"
+                      placeholder="Write a journal entry or message..."
+                      className="flex-1 bg-slate-50 border border-slate-200 rounded-full px-6 py-3 text-slate-800 focus:outline-none focus:ring-2 focus:ring-wellness-blue/50"
+                      disabled={isTyping}
                     />
+                    <button type="submit" disabled={isTyping || !input.trim()} className="bg-wellness-blue text-white w-12 h-12 rounded-full flex items-center justify-center hover:bg-blue-600 transition-colors disabled:opacity-50">
+                        ➤
+                    </button>
                   </form>
             </div>
           </div>
-
         </div>
       </div>
+      
+      {/* Lightbox */}
+      {selectedImage && (
+        <div className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center p-4" onClick={() => setSelectedImage(null)}>
+          <img src={selectedImage} alt="Full Size" className="max-w-full max-h-[90vh] rounded-lg" />
+        </div>
+      )}
+
+      {/* Patient Intake Modal */}
+      {showIntake && (
+        <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto pt-24 pb-12">
+           <div className="bg-white rounded-3xl max-w-3xl w-full p-8 relative shadow-2xl">
+               <button onClick={() => setShowIntake(false)} className="absolute top-6 right-6 text-slate-400 hover:text-slate-800 z-10 w-8 h-8 flex items-center justify-center bg-slate-100 rounded-full transition-colors">✕</button>
+               <h2 className="text-3xl font-bold mb-8 text-slate-800 border-b border-slate-100 pb-4">{editingPatientId ? 'Edit Patient Profile' : 'Add New Patient'}</h2>
+               <div className="max-h-[70vh] overflow-y-auto pr-4 custom-scrollbar">
+                   <UserIntakeForm 
+                       onSave={handleSavePatient} 
+                       initialData={editingPatientId ? patients.find(p => p.id === editingPatientId) : {}}
+                   />
+               </div>
+           </div>
+        </div>
+      )}
     </section>
   );
 };

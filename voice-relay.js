@@ -4,7 +4,7 @@ import { Buffer } from "node:buffer";
 
 const GEMINI_WS_URL = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent";
 
-export function setupVoiceRelay(server, getContextCallback, saveMessageCallback) {
+export function setupVoiceRelay(server, getContextCallback, saveMessageCallback, scheduleEventCallback) {
   const wss = new WebSocketServer({ server, path: '/api/twilio/media' });
 
   wss.on("connection", (twilioWs) => {
@@ -41,11 +41,31 @@ export function setupVoiceRelay(server, getContextCallback, saveMessageCallback)
           const setupMsg = {
             setup: {
               model: "models/gemini-2.5-flash-native-audio-latest",
+              tools: [{
+                  functionDeclarations: [{
+                      name: "schedule_calendar_event",
+                      description: "Schedule a calendar appointment natively into the caregiver system.",
+                      parameters: {
+                          type: "OBJECT",
+                          properties: {
+                              title: { type: "STRING", description: "Short title of the event" },
+                              description: { type: "STRING", description: "Details of the event" },
+                              start_time: { type: "STRING", description: "ISO 8601 formatted start time (e.g. 2026-03-20T15:00:00Z)" }
+                          },
+                          required: ["title", "description", "start_time"]
+                      }
+                  }]
+              }],
               generationConfig: { 
                  responseModalities: ["AUDIO"],
                  speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceId } } }
               },
-              systemInstruction: { parts: [{ text: `You are Parallel automatically responding to a check-in phone call. You MUST adopt this exact personality trait: ${emotionalTrait}. Answer the phone warmly with 1 short natural sentence like 'Hello I am here'. Keep all your responses extremely brief (1 short sentence max) to simulate a real phone call. Do not use filler formatting. User Profile Data: \n\n${contextString}` }] }
+              systemInstruction: { parts: [{ text: `You are MyParallel responding to a check-in phone call. Adopt this personality trait: ${emotionalTrait}. Keep responses extremely brief (1 short sentence max). Do not use filler formatting. 
+              
+CRITICAL RULES:
+1. If the user asks to schedule an appointment or check-in, you MUST execute the schedule_calendar_event function tool. Do not just verbally agree. You must use the tool block to physically save it!
+
+User Profile Data: \n\n${contextString}` }] }
             }
           };
           geminiWs.send(JSON.stringify(setupMsg));
@@ -75,6 +95,31 @@ export function setupVoiceRelay(server, getContextCallback, saveMessageCallback)
               aiTranscriptBuffer = "";
           } else if (response.serverContent?.modelTurn?.parts) {
             for (const part of response.serverContent.modelTurn.parts) {
+              
+              if (part.functionCall) {
+                  const call = part.functionCall;
+                  if (call.name === "schedule_calendar_event") {
+                      console.log("[Gemini Twilio] Native Function Call interjection detected:", call.args);
+                      // Pause execution, trigger DB injection natively through central monolith proxy
+                      scheduleEventCallback(userNumber, call.args.title, call.args.description, call.args.start_time).then(success => {
+                          geminiWs.send(JSON.stringify({
+                              clientContent: {
+                                  turns: [{
+                                      role: "user",
+                                      parts: [{
+                                          functionResponse: {
+                                              name: "schedule_calendar_event",
+                                              response: { success: success ? "Successfully isolated and scheduled" : "Database rejection" }
+                                          }
+                                      }]
+                                  }],
+                                  turnComplete: true
+                              }
+                          }));
+                      });
+                  }
+              }
+
               if (part.text) {
                   aiTranscriptBuffer += part.text;
               }

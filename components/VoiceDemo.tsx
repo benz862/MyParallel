@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, memo } from 'react';
-import { GoogleGenAI, LiveServerMessage, Modality, Blob } from '@google/genai';
+import { GoogleGenAI, LiveServerMessage, Modality, Blob, Type } from '@google/genai';
 import { VOICE_PRESETS, BASE_SYSTEM_INSTRUCTION } from '../constants';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../utils/supabase';
@@ -211,7 +211,7 @@ export const VoiceDemo: React.FC<VoiceDemoProps> = ({ lockedVoiceId, lockedPhone
               const inputData = e.inputBuffer.getChannelData(0);
               
               // Detect if user is speaking (simple amplitude check to interrupt AI)
-              const amplitude = Array.from(inputData).reduce((sum: number, val: number) => sum + Math.abs(val), 0) / inputData.length;
+              const amplitude = Array.from(inputData).reduce<number>((sum, val) => sum + Math.abs(val as number), 0) / inputData.length;
               if (amplitude > 0.02) {  // User is speaking - interrupt AI
                 // Stop all playing audio sources (interrupt the AI)
                 sourcesRef.current.forEach(source => {
@@ -230,14 +230,45 @@ export const VoiceDemo: React.FC<VoiceDemoProps> = ({ lockedVoiceId, lockedPhone
             source.connect(scriptProcessor);
             scriptProcessor.connect(inputCtx.destination);
            },
-          onmessage: async (message: LiveServerMessage) => {
-            if (message.serverContent?.modelTurn?.parts) {
-               for (const part of message.serverContent.modelTurn.parts) {
-                   if (part.text) {
-                       aiTranscriptBufferRef.current += part.text;
-                   }
-               }
-            }
+           onmessage: async (message: LiveServerMessage) => {
+             if (message.serverContent?.modelTurn?.parts) {
+                for (const part of message.serverContent.modelTurn.parts) {
+                    if ((part as any).functionCall) {
+                        const call = (part as any).functionCall;
+                        if (call.name === 'schedule_calendar_event') {
+                            console.log("Gemini WebRTC requested to schedule calendar event:", call.args);
+                            const targetPhone = lockedPhoneNumber || patientPhone;
+                            if (targetPhone) {
+                                const cleanUrl = import.meta.env.DEV ? 'http://localhost:8081' : '';
+                                fetch(`${cleanUrl}/api/schedule-event`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ userNumber: targetPhone, ...call.args })
+                                }).then(res => res.json()).then(result => {
+                                    activeSessionRef.current?.send({
+                                        clientContent: {
+                                            turns: [{
+                                                role: "user",
+                                                parts: [{
+                                                    functionResponse: {
+                                                        name: "schedule_calendar_event",
+                                                        response: { success: result.success ? "Successfully scheduled" : "Database error" }
+                                                    }
+                                                }]
+                                            }],
+                                            turnComplete: true
+                                        }
+                                    });
+                                });
+                            }
+                        }
+                    }
+
+                    if (part.text) {
+                        aiTranscriptBufferRef.current += part.text;
+                    }
+                }
+             }
 
             if (message.serverContent?.turnComplete) {
                 const finalTranscript = aiTranscriptBufferRef.current.trim();
@@ -310,6 +341,21 @@ export const VoiceDemo: React.FC<VoiceDemoProps> = ({ lockedVoiceId, lockedPhone
         },
         config: {
           responseModalities: [Modality.AUDIO],
+          tools: [{
+              functionDeclarations: [{
+                 name: 'schedule_calendar_event',
+                 description: 'Schedule a calendar appointment natively into the caregiver system.',
+                 parameters: {
+                    type: "OBJECT",
+                    properties: {
+                       title: { type: "STRING" },
+                       description: { type: "STRING" },
+                       start_time: { type: "STRING", description: "ISO 8601 formatted start time (e.g. 2026-03-20T15:00:00Z)" }
+                    },
+                    required: ["title", "description", "start_time"]
+                 }
+              }]
+          }] as any,
           speechConfig: {
             voiceConfig: { prebuiltVoiceConfig: { voiceName: selectedVoiceId } },
           },
@@ -317,6 +363,9 @@ export const VoiceDemo: React.FC<VoiceDemoProps> = ({ lockedVoiceId, lockedPhone
           
 CRITICAL TEMPORAL CONTEXT:
 The current accurate actual local time for the physical user is: ${new Date().toLocaleString()}.
+
+CRITICAL RULES:
+1. If the user explicitly asks to schedule an appointment or check-in on their calendar, you MUST natively execute the "schedule_calendar_event" function tool. Do not simply verbally agree. You must trigger the tool API correctly to physically place it on the caregiver's calendar!
 
 ${patientContextString || ''}
 

@@ -68,6 +68,45 @@ async function getHistory(userNumber, limit = 10) {
     return data ? data.reverse().map(m => ({ role: m.sender === 'user' ? 'user' : 'model', parts: [{ text: m.content || (m.media_url ? '[Image]' : '') }] })) : [];
 }
 
+async function scheduleCalendarEvent(userNumber, title, description, startTime) {
+    if (!supabase || !userNumber) return false;
+    try {
+        const { data: profile } = await supabase.from('user_profiles').select('id, full_name, caregiver_name').eq('phone_number', userNumber).single();
+        if (!profile) return false;
+        
+        const start = new Date(startTime);
+        const end = new Date(start.getTime() + 60*60*1000); // Default to 1 hour appt
+        
+        // 1. Insert Event
+        const { error } = await supabase.from('calendar_events').insert({
+            user_id: profile.id,
+            title: title || 'AI Scheduled Check-in',
+            description: description || 'Scheduled via Voice Assistant',
+            start_time: start.toISOString(),
+            end_time: end.toISOString()
+        });
+        if (error) throw error;
+        
+        // 2. Log & Twilio SMS to Patient
+        const msg = `Your appointment "${title}" has been scheduled for ${start.toLocaleString('en-US', {timeZone: 'America/New_York'})}.`;
+        await saveMessage(userNumber, 'system', `[System] Appointment Scheduled: ${msg}`, null, 'system');
+        if (twilioClient) {
+            await twilioClient.messages.create({ from: process.env.TWILIO_PHONE_NUMBER, to: userNumber, body: msg }).catch(e => console.error("Twilio SMS fail:", e));
+        }
+        
+        // 3. Email Caregiver logging (SMTP Emulation)
+        console.log(`\n\n[Supabase SMTP Trigger / Nodemailer Protocol]`);
+        console.log(`To: Caregiver (${profile.caregiver_name || 'System Admin'})`);
+        console.log(`Subject: New Appointment Scheduled for ${profile.full_name}`);
+        console.log(`Body: A new appointment "${title}" has been added to the calendar for ${start.toLocaleString('en-US', {timeZone: 'America/New_York'})}.\n\n`);
+        
+        return true;
+    } catch(e) {
+        console.error("AI Scheduling Error:", e);
+        return false;
+    }
+}
+
 // Universal Helper to fetch deep context for Gemini
 async function getUserProfileContext(phoneNumber) {
     if (!supabase || !phoneNumber) return { contextString: "", voiceId: "Puck", emotionalTrait: "Empathetic and warm" };
@@ -236,6 +275,19 @@ app.post('/api/log-transcription', async (req, res) => {
         res.json({ success: true });
     } catch (err) {
         console.error('Failed to log transcription:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/schedule-event', async (req, res) => {
+    const { userNumber, title, description, start_time } = req.body;
+    if (!userNumber || !title || !start_time) return res.status(400).json({ error: 'Missing required parameters' });
+    
+    try {
+        const success = await scheduleCalendarEvent(userNumber, title, description, start_time);
+        res.json({ success });
+    } catch (err) {
+        console.error('Failed web schedule:', err);
         res.status(500).json({ error: err.message });
     }
 });
@@ -840,4 +892,4 @@ app.get('*', (req, res) => {
 const server = app.listen(PORT, '0.0.0.0', () => console.log(`Parallel Wellness Backend on ${PORT}`));
 
 // Start up the Dual-Websocket bridging system onto the exact same server
-setupVoiceRelay(server, getUserProfileContext, saveMessage);
+setupVoiceRelay(server, getUserProfileContext, saveMessage, scheduleCalendarEvent);

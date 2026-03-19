@@ -313,6 +313,16 @@ const WebTerminal: React.FC = () => {
                                ✏️ Edit
                            </button>
                            <button 
+                               onClick={(e) => { 
+                                  e.stopPropagation();
+                                  navigator.clipboard.writeText(`${window.location.origin}/patient?id=${p.id}`);
+                                  alert('Secure PWA App Link Copied! Text this directly to your Patient.');
+                               }} 
+                               className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors whitespace-nowrap ${isActive ? 'bg-white/50 hover:bg-white text-slate-800' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'}`}
+                           >
+                               🔗 Copy PWA Link
+                           </button>
+                           <button 
                                onClick={(e) => handleDeletePatient(e, p.id)} 
                                className="px-3 py-1.5 bg-red-50 rounded-lg text-xs text-red-500 font-bold hover:bg-red-100 transition-colors whitespace-nowrap"
                            >

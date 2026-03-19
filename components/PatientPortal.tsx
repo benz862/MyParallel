@@ -1,13 +1,29 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { supabase } from '../utils/supabase';
 import { VoiceDemo } from './VoiceDemo';
 
 export const PatientPortal: React.FC = () => {
+    const [searchParams] = useSearchParams();
+    const tokenUuid = searchParams.get('id');
     const [phoneNumber, setPhoneNumber] = useState('');
     const [patientSession, setPatientSession] = useState<any>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [isCallingPhone, setIsCallingPhone] = useState(false);
     const [error, setError] = useState<string | null>(null);
+
+    // Explicitly bypass traditional authentication if a secure UUID token is provided in the PWA URL
+    useEffect(() => {
+        if (tokenUuid) {
+            setIsLoading(true);
+            supabase.from('user_profiles').select('*').eq('id', tokenUuid).single()
+                .then(({ data }) => {
+                    if (data) setPatientSession(data);
+                    else setError("Invalid Secure Invitation Token.");
+                    setIsLoading(false);
+                });
+        }
+    }, [tokenUuid]);
 
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();

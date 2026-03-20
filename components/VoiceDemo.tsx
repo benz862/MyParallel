@@ -238,24 +238,22 @@ export const VoiceDemo: React.FC<VoiceDemoProps> = ({ lockedVoiceId, lockedPhone
                      if (fc.name === 'schedule_calendar_event') {
                          console.log("Gemini WebRTC requested schedule_calendar_event:", fc.args);
                          const targetPhone = lockedPhoneNumber || patientPhone;
-                         if (targetPhone) {
-                             const cleanUrl = import.meta.env.DEV ? 'http://localhost:8081' : '';
-                             fetch(`${cleanUrl}/api/schedule-event`, {
-                                 method: 'POST',
-                                 headers: { 'Content-Type': 'application/json' },
-                                 body: JSON.stringify({ userNumber: targetPhone, ...fc.args })
-                             }).then(res => res.json()).then(result => {
-                                 activeSessionRef.current?.send({
-                                     toolResponse: {
-                                         functionResponses: [{
-                                             id: fc.id,
-                                             name: "schedule_calendar_event",
-                                             response: { result: { success: result.success ? "Successfully scheduled" : "Database error" } }
-                                         }]
-                                     }
-                                 } as any);
-                             }).catch(e => console.error("Schedule API error:", e));
-                         }
+                         const cleanUrl = import.meta.env.DEV ? 'http://localhost:8081' : '';
+                         fetch(`${cleanUrl}/api/schedule-event`, {
+                             method: 'POST',
+                             headers: { 'Content-Type': 'application/json' },
+                             body: JSON.stringify({ userNumber: targetPhone || null, user_id: patientId || null, ...fc.args })
+                         }).then(res => res.json()).then(result => {
+                             activeSessionRef.current?.send({
+                                 toolResponse: {
+                                     functionResponses: [{
+                                         id: fc.id,
+                                         name: "schedule_calendar_event",
+                                         response: { result: { success: result.success ? "Successfully scheduled" : "Database error" } }
+                                     }]
+                                 }
+                             } as any);
+                         }).catch(e => console.error("Schedule API error:", e));
                      }
                  }
              }

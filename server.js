@@ -301,11 +301,29 @@ app.post('/api/log-transcription', async (req, res) => {
 });
 
 app.post('/api/schedule-event', async (req, res) => {
-    const { userNumber, title, description, start_time } = req.body;
-    if (!userNumber || !title || !start_time) return res.status(400).json({ error: 'Missing required parameters' });
+    const { userNumber, user_id, title, description, start_time, reminder_minutes } = req.body;
+    if ((!userNumber && !user_id) || !title || !start_time) return res.status(400).json({ error: 'Missing required parameters' });
     
     try {
-        const success = await scheduleCalendarEvent(userNumber, title, description, start_time);
+        let success = false;
+        if (userNumber) {
+            success = await scheduleCalendarEvent(userNumber, title, description, start_time, reminder_minutes || 0);
+        }
+        // Fallback: if phone lookup failed or no phone, try by user_id directly
+        if (!success && user_id && supabase) {
+            const start = new Date(start_time);
+            const end = new Date(start.getTime() + 60*60*1000);
+            const { error } = await supabase.from('calendar_events').insert({
+                user_id,
+                title: title || 'AI Scheduled Check-in',
+                description: description || 'Scheduled via Voice Assistant',
+                start_time: start.toISOString(),
+                end_time: end.toISOString(),
+                reminder_minutes: reminder_minutes || 0
+            });
+            if (!error) success = true;
+            else console.error('Direct user_id insert failed:', error);
+        }
         res.json({ success });
     } catch (err) {
         console.error('Failed web schedule:', err);

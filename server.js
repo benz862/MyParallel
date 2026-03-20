@@ -188,6 +188,94 @@ async function getUserProfileContext(phoneNumber) {
             }
         } catch(err) { console.error('Failed fetching medication context', err); }
 
+        // Fetch today's medication dose schedule
+        let todayMedSchedule = "No doses scheduled today";
+        try {
+            const tz = profile.timezone || 'America/New_York';
+            const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: tz }); // YYYY-MM-DD
+            const dayStart = `${todayStr}T00:00:00.000Z`;
+            const dayEnd = `${todayStr}T23:59:59.999Z`;
+            const { data: doses } = await supabase
+                .from('medication_schedule_events')
+                .select('*')
+                .eq('patient_id', profile.id)
+                .is('invalidated_at', null)
+                .gte('scheduled_for', dayStart)
+                .lte('scheduled_for', dayEnd)
+                .order('scheduled_for', { ascending: true });
+            if (doses && doses.length > 0) {
+                todayMedSchedule = doses.map(d => {
+                    const time = new Date(d.scheduled_for).toLocaleTimeString('en-US', { timeZone: tz, hour: 'numeric', minute: '2-digit' });
+                    return `- ${time}: ${d.medication_name || 'medication'}${d.dose_text ? ' (' + d.dose_text + ')' : ''} — ${d.status.toUpperCase()}${d.instruction_summary ? ' | ' + d.instruction_summary : ''}`;
+                }).join('\n');
+            }
+        } catch(err) { console.error('Failed fetching today med schedule', err); }
+
+        // Fetch today's care tasks
+        let todayCareTasks = "No care tasks today";
+        try {
+            const tz = profile.timezone || 'America/New_York';
+            const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: tz });
+            const { data: tasks } = await supabase
+                .from('care_task_instances')
+                .select('*')
+                .eq('patient_id', profile.id)
+                .eq('scheduled_date', todayStr)
+                .order('scheduled_time', { ascending: true, nullsFirst: false });
+            if (tasks && tasks.length > 0) {
+                const done = tasks.filter(t => t.status === 'completed').length;
+                todayCareTasks = `${done}/${tasks.length} completed\n` + tasks.map(t => {
+                    const time = t.scheduled_time ? t.scheduled_time.substring(0, 5) : '';
+                    return `- ${t.icon || '📋'} ${time ? time + ': ' : ''}${t.title} — ${t.status.toUpperCase()}`;
+                }).join('\n');
+            }
+        } catch(err) { console.error('Failed fetching care tasks', err); }
+
+        // Fetch latest vitals
+        let vitalsContext = "No recent vitals recorded";
+        try {
+            const { data: vital } = await supabase
+                .from('health_vitals_logs')
+                .select('*')
+                .eq('patient_id', profile.id)
+                .order('recorded_at', { ascending: false })
+                .limit(1)
+                .single();
+            if (vital) {
+                const vTime = new Date(vital.recorded_at).toLocaleString('en-US', { timeZone: profile.timezone || 'America/New_York' });
+                const parts = [];
+                if (vital.blood_pressure_systolic) parts.push(`BP: ${vital.blood_pressure_systolic}/${vital.blood_pressure_diastolic} mmHg`);
+                if (vital.heart_rate) parts.push(`HR: ${vital.heart_rate} bpm`);
+                if (vital.oxygen_saturation) parts.push(`O₂: ${vital.oxygen_saturation}%`);
+                if (vital.temperature) parts.push(`Temp: ${vital.temperature}°F`);
+                if (vital.weight) parts.push(`Weight: ${vital.weight} lbs`);
+                if (vital.blood_glucose) parts.push(`Glucose: ${vital.blood_glucose} mg/dL`);
+                if (vital.pain_level !== null && vital.pain_level !== undefined) parts.push(`Pain: ${vital.pain_level}/10`);
+                if (vital.mood_level !== null && vital.mood_level !== undefined) parts.push(`Mood: ${vital.mood_level}/10`);
+                if (vital.sleep_hours) parts.push(`Sleep: ${vital.sleep_hours} hrs`);
+                vitalsContext = `Last recorded: ${vTime}\n${parts.join(' | ')}${vital.notes ? '\nNotes: ' + vital.notes : ''}`;
+            }
+        } catch(err) { console.error('Failed fetching vitals', err); }
+
+        // Fetch recent incidents
+        let incidentContext = "No recent incidents";
+        try {
+            const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+            const { data: incidents } = await supabase
+                .from('incidents')
+                .select('*')
+                .eq('patient_id', profile.id)
+                .gte('occurred_at', weekAgo)
+                .order('occurred_at', { ascending: false })
+                .limit(5);
+            if (incidents && incidents.length > 0) {
+                incidentContext = incidents.map(i => {
+                    const time = new Date(i.occurred_at).toLocaleString('en-US', { timeZone: profile.timezone || 'America/New_York' });
+                    return `- ${time}: ${i.incident_type.replace(/_/g, ' ')} (${i.severity}) — ${i.title}${i.resolution_status !== 'resolved' ? ' [OPEN]' : ''}`;
+                }).join('\n');
+            }
+        } catch(err) { console.error('Failed fetching incidents', err); }
+
         const caregiverName = profile.caregiver_name || 'Not specified';
 
         return {
@@ -206,8 +294,21 @@ USER PROFILE CONTEXT:
 - Automated Check-in Schedule: ${formattedSchedule}
 - Interface Preference: ${profile.selected_personality || 'Warm and supportive'}
 
-CURRENT MEDICATIONS:
+CURRENT MEDICATIONS (prescribed):
 ${medicationContext}
+
+TODAY'S MEDICATION SCHEDULE (doses for today with times and status):
+${todayMedSchedule}
+IMPORTANT: When the patient asks about what medications they need to take, refer to THIS schedule. Tell them the specific medication name, dose, time, and any instructions. If status is DUE, tell them it's time or upcoming. If TAKEN, confirm it's already done.
+
+TODAY'S CARE TASKS:
+${todayCareTasks}
+
+LATEST HEALTH VITALS:
+${vitalsContext}
+
+RECENT INCIDENTS (last 7 days):
+${incidentContext}
 
 UPCOMING / RECENT CAREGIVER CALENDAR APPOINTMENTS:
 ${calendarContext}

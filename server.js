@@ -74,26 +74,24 @@ async function scheduleCalendarEvent(userNumber, title, description, startTime, 
         const { data: profile } = await supabase.from('user_profiles').select('id, full_name, caregiver_name, timezone').eq('phone_number', userNumber).single();
         if (!profile) return false;
         
-        // The AI often sends times as UTC (+00:00/Z) even when told to use local time.
-        // Detect this and interpret the time as the user's intended local time.
+        // ALWAYS treat whatever time the AI sends as the user's intended local time.
+        // Strip any timezone offset the AI may have included and re-interpret in the user's timezone.
         const userTz = profile.timezone || 'America/New_York';
-        let start;
-        if (startTime.endsWith('+00:00') || startTime.endsWith('Z') || startTime.endsWith('+0000')) {
-            // AI used UTC — strip the offset and interpret as local time
-            const naiveTime = startTime.replace(/[Z+].*$/, '');
-            // Create Date in user's timezone by using toLocaleString trick
-            const fakeUtc = new Date(naiveTime + 'Z'); // parse as UTC first
-            const utcMs = fakeUtc.getTime();
-            // Get the timezone offset for this user's timezone at this time
-            const localStr = fakeUtc.toLocaleString('en-US', { timeZone: userTz });
-            const localDate = new Date(localStr);
-            const offsetMs = utcMs - localDate.getTime();
-            start = new Date(utcMs + offsetMs);
-            console.log(`[Schedule] AI sent UTC time ${startTime}, reinterpreted as ${userTz}: ${start.toISOString()}`);
-        } else {
-            // AI included a proper offset like -04:00, trust it
-            start = new Date(startTime);
-        }
+        
+        // 1. Strip timezone info to get the "naive" local time the user meant
+        const naiveTime = startTime.replace(/([+-]\d{2}:\d{2}|[+-]\d{4}|Z)$/, '');
+        
+        // 2. Parse as UTC temporarily just to extract the date/time components
+        const asUtc = new Date(naiveTime + 'Z');
+        
+        // 3. Figure out the UTC offset for the user's timezone at that moment
+        //    by comparing the same instant displayed in UTC vs in the user's tz
+        const inTz = new Date(asUtc.toLocaleString('en-US', { timeZone: userTz }));
+        const offsetMs = asUtc.getTime() - inTz.getTime(); // positive = tz is behind UTC
+        
+        // 4. Shift so that the "naive" time becomes the correct UTC instant
+        const start = new Date(asUtc.getTime() + offsetMs);
+        console.log(`[Schedule] AI sent "${startTime}" → naive="${naiveTime}" → stored UTC=${start.toISOString()} (${userTz})`);
         const end = new Date(start.getTime() + 60*60*1000); // Default to 1 hour appt
         
         // 1. Insert Event

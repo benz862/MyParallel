@@ -98,6 +98,41 @@ User Profile Data: \n\n${contextString}` }]
                 }
               };
               geminiWs.send(JSON.stringify(greetingMsg));
+            
+            // === TOP-LEVEL toolCall interception (Gemini 2.5 Native Audio format) ===
+            } else if (response.toolCall && response.toolCall.functionCalls) {
+              console.log("[Proxy] TOP-LEVEL TOOL CALL INTERCEPTED:", JSON.stringify(response.toolCall));
+              for (const fc of response.toolCall.functionCalls) {
+                if (fc.name === 'schedule_calendar_event' && scheduleEventCallback) {
+                  console.log(`[Proxy] Executing scheduleEventCallback for ${activeUserNumber}...`, fc.args);
+                  scheduleEventCallback(activeUserNumber, fc.args.title, fc.args.description, fc.args.start_time).then(success => {
+                    console.log(`[Proxy] DB Insert Result: ${success} -> Sending toolResponse to Gemini...`);
+                    const toolResponsePayload = {
+                      toolResponse: {
+                        functionResponses: [{
+                          id: fc.id,
+                          name: "schedule_calendar_event",
+                          response: success 
+                            ? { result: { status: "success", detail: "Appointment securely saved to the calendar." } }
+                            : { result: { status: "error", detail: "Database rejection. User profile not found." } }
+                        }]
+                      }
+                    };
+                    try {
+                      if (geminiWs.readyState === 1) {
+                        geminiWs.send(JSON.stringify(toolResponsePayload));
+                      } else {
+                        console.warn(`[Proxy WARNING] Gemini WS closed before toolResponse could be sent.`);
+                      }
+                    } catch (err) {
+                      console.error("[Proxy FATAL] toolResponse send crash:", err);
+                    }
+                  }).catch(e => {
+                    console.error("[Proxy ERROR] scheduleEventCallback rejected:", e);
+                  });
+                }
+              }
+
             } else if (response.serverContent?.turnComplete) {
               if (aiTranscriptBuffer.trim() && saveMessageCallback && activeUserNumber) {
                 saveMessageCallback(activeUserNumber, 'ai', aiTranscriptBuffer.trim(), null, 'call');
@@ -105,46 +140,6 @@ User Profile Data: \n\n${contextString}` }]
               aiTranscriptBuffer = "";
             } else if (response.serverContent?.modelTurn?.parts) {
               for (const part of response.serverContent.modelTurn.parts) {
-
-                if (part.functionCall) {
-                  console.log("[Proxy] RAW GENAI FUNCTION CALL INTERCEPTED:", JSON.stringify(part.functionCall));
-                  if (part.functionCall.name === 'schedule_calendar_event') {
-                    const call = part.functionCall;
-                    if (scheduleEventCallback) {
-                      console.log(`[Proxy] Executing backend scheduleEventCallback for ${activeUserNumber}...`, call.args);
-
-                      scheduleEventCallback(activeUserNumber, call.args.title, call.args.description, call.args.start_time).then(success => {
-                        console.log(`[Proxy] DB Insert Result: ${success} -> Sending functionResponse to Gemini...`);
-                        const responsePayload = {
-                          clientContent: {
-                            turns: [{
-                              role: "user",
-                              parts: [{
-                                functionResponse: {
-                                  id: call.id || undefined, // strictly require ID for GenAI stability if provided
-                                  name: "schedule_calendar_event",
-                                  response: success ? { status: "success", detail: "Appointment securely saved." } : { status: "error", detail: "Database rejection. User profile not found." }
-                                }
-                              }]
-                            }],
-                            turnComplete: true
-                          }
-                        };
-                        try {
-                          if (geminiWs.readyState === 1) { // WebSocket.OPEN is 1
-                            geminiWs.send(JSON.stringify(responsePayload));
-                          } else {
-                            console.warn(`[Proxy WARNING] Gemini WS is not OPEN (state: ${geminiWs.readyState}). Dropping responsePayload.`);
-                          }
-                        } catch (err) {
-                          console.error("[Proxy FATAL] Synchronous send crash intercepted:", err);
-                        }
-                      }).catch(e => {
-                        console.error("[Proxy ERROR] scheduleEventCallback promise chain rejected natively:", e);
-                      });
-                    }
-                  }
-                }
                 if (part.text) {
                   aiTranscriptBuffer += part.text;
                 }

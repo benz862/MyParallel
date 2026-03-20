@@ -231,39 +231,37 @@ export const VoiceDemo: React.FC<VoiceDemoProps> = ({ lockedVoiceId, lockedPhone
             scriptProcessor.connect(inputCtx.destination);
            },
            onmessage: async (message: LiveServerMessage) => {
+             // === TOP-LEVEL toolCall interception (Gemini 2.5 Native Audio format) ===
+             if ((message as any).toolCall && (message as any).toolCall.functionCalls) {
+                 console.log("[WebRTC] TOP-LEVEL TOOL CALL:", JSON.stringify((message as any).toolCall));
+                 for (const fc of (message as any).toolCall.functionCalls) {
+                     if (fc.name === 'schedule_calendar_event') {
+                         console.log("Gemini WebRTC requested schedule_calendar_event:", fc.args);
+                         const targetPhone = lockedPhoneNumber || patientPhone;
+                         if (targetPhone) {
+                             const cleanUrl = import.meta.env.DEV ? 'http://localhost:8081' : '';
+                             fetch(`${cleanUrl}/api/schedule-event`, {
+                                 method: 'POST',
+                                 headers: { 'Content-Type': 'application/json' },
+                                 body: JSON.stringify({ userNumber: targetPhone, ...fc.args })
+                             }).then(res => res.json()).then(result => {
+                                 activeSessionRef.current?.send({
+                                     toolResponse: {
+                                         functionResponses: [{
+                                             id: fc.id,
+                                             name: "schedule_calendar_event",
+                                             response: { result: { success: result.success ? "Successfully scheduled" : "Database error" } }
+                                         }]
+                                     }
+                                 } as any);
+                             }).catch(e => console.error("Schedule API error:", e));
+                         }
+                     }
+                 }
+             }
+
              if (message.serverContent?.modelTurn?.parts) {
                 for (const part of message.serverContent.modelTurn.parts) {
-                    if ((part as any).functionCall) {
-                        const call = (part as any).functionCall;
-                        if (call.name === 'schedule_calendar_event') {
-                            console.log("Gemini WebRTC requested to schedule calendar event:", call.args);
-                            const targetPhone = lockedPhoneNumber || patientPhone;
-                            if (targetPhone) {
-                                const cleanUrl = import.meta.env.DEV ? 'http://localhost:8081' : '';
-                                fetch(`${cleanUrl}/api/schedule-event`, {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ userNumber: targetPhone, ...call.args })
-                                }).then(res => res.json()).then(result => {
-                                    activeSessionRef.current?.send({
-                                        clientContent: {
-                                            turns: [{
-                                                role: "user",
-                                                parts: [{
-                                                    functionResponse: {
-                                                        name: "schedule_calendar_event",
-                                                        response: { success: result.success ? "Successfully scheduled" : "Database error" }
-                                                    }
-                                                }]
-                                            }],
-                                            turnComplete: true
-                                        }
-                                    });
-                                });
-                            }
-                        }
-                    }
-
                     if (part.text) {
                         aiTranscriptBufferRef.current += part.text;
                     }

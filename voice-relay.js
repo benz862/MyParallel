@@ -42,8 +42,20 @@ export function setupVoiceRelay(server, getContextCallback, saveMessageCallback,
             }
           }
 
-          const aiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+          const aiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || process.env.API_KEY;
+          if (!aiKey) {
+            console.error('[Proxy] CRITICAL: No GEMINI_API_KEY, VITE_GEMINI_API_KEY, or API_KEY found in env vars!');
+          }
+          console.log(`[Proxy] Connecting to Gemini WS with key: ${aiKey ? aiKey.substring(0,8) + '...' : 'MISSING'}`);
           geminiWs = new WebSocket(`${GEMINI_WS_URL}?key=${aiKey}`);
+
+          geminiWs.on("error", (err) => {
+            console.error(`[Gemini] WebSocket ERROR:`, err.message || err);
+          });
+
+          geminiWs.on("close", (code, reason) => {
+            console.log(`[Gemini] WebSocket CLOSED. Code: ${code}, Reason: ${reason?.toString() || 'none'}`);
+          });
 
           geminiWs.on("open", () => {
             console.log(`[WebRTC] Gemini Stream Connected. Forcing Voice: ${voiceId}`);

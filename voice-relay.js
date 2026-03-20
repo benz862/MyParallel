@@ -26,6 +26,7 @@ export function setupVoiceRelay(server, getContextCallback, saveMessageCallback,
           let contextString = "";
           let voiceId = "Puck";
           let emotionalTrait = "Empathetic and warm";
+          let userTimezone = "America/New_York";
           let aiTranscriptBuffer = "";
 
           if (activeUserNumber && getContextCallback) {
@@ -34,7 +35,8 @@ export function setupVoiceRelay(server, getContextCallback, saveMessageCallback,
               contextString = contextData.contextString || "";
               voiceId = contextData.voiceId || "Puck";
               emotionalTrait = contextData.emotionalTrait || "Empathetic and warm";
-              console.log(`[Proxy] Successfully hydrated patient context for: ${activeUserNumber}`);
+              userTimezone = contextData.timezone || "America/New_York";
+              console.log(`[Proxy] Successfully hydrated patient context for: ${activeUserNumber} (TZ: ${userTimezone})`);
             } else {
               console.warn(`[Proxy WARNING] No patient found in DB for raw Twilio number: ${activeUserNumber}`);
             }
@@ -58,7 +60,7 @@ export function setupVoiceRelay(server, getContextCallback, saveMessageCallback,
                       properties: {
                         title: { type: "STRING", description: "Short title of the event" },
                         description: { type: "STRING", description: "Details of the event" },
-                        start_time: { type: "STRING", description: "ISO 8601 formatted start time in the user's LOCAL timezone (e.g. 2026-03-20T15:00:00-04:00)" }
+                        start_time: { type: "STRING", description: `ISO 8601 formatted start time in the user's local timezone (${userTimezone})` }
                       },
                       required: ["title", "description", "start_time"]
                     }
@@ -72,7 +74,7 @@ export function setupVoiceRelay(server, getContextCallback, saveMessageCallback,
                   parts: [{
                     text: `You are MyParallel responding to a check-in phone call. Adopt this personality trait: ${emotionalTrait}. Keep responses extremely brief (1 short sentence max). Do not use filler formatting. 
 
-IMPORTANT: The current date and time is ${new Date().toLocaleString('en-US', { timeZone: 'America/New_York', dateStyle: 'full', timeStyle: 'short' })}. The user's timezone is America/New_York (Eastern Time). When scheduling appointments, ALWAYS use Eastern Time with the -04:00 offset (e.g. 2026-03-20T15:00:00-04:00). NEVER schedule in UTC.
+IMPORTANT: The current date and time is ${new Date().toLocaleString('en-US', { timeZone: userTimezone, dateStyle: 'full', timeStyle: 'short' })}. The user's timezone is ${userTimezone}. When scheduling appointments, ALWAYS use the user's local timezone. NEVER schedule in UTC.
               
 CRITICAL RULES:
 1. You have a TOOL BLOCK installed called "schedule_calendar_event". If the user asks to schedule an appointment or check-in, YOU ABSOLUTELY MUST EMIT THIS FUNCTION CALL EXACTLY ONCE. DO NOT verbally agree without emitting the physical function block! Only call the tool ONE TIME per appointment request.

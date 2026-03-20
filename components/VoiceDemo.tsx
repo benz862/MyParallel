@@ -360,7 +360,7 @@ export const VoiceDemo: React.FC<VoiceDemoProps> = ({ lockedVoiceId, lockedPhone
           systemInstruction: `You are MyParallel. ${selectedVoice.systemInstruction} Keep responses relatively short, natural, and conversational. Do not sound like a robot. 
           
 CRITICAL TEMPORAL CONTEXT:
-The current accurate actual local time for the physical user is: ${new Date().toLocaleString()}.
+The current accurate actual local time for the physical user is: ${new Date().toLocaleString()}. Their timezone is ${Intl.DateTimeFormat().resolvedOptions().timeZone}. When scheduling appointments, ALWAYS use the user's local timezone. NEVER schedule in UTC.
 
 CRITICAL RULES:
 1. If the user explicitly asks to schedule an appointment or check-in on their calendar, you MUST natively execute the "schedule_calendar_event" function tool. Do not simply verbally agree. You must trigger the tool API correctly to physically place it on the caregiver's calendar!

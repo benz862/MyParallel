@@ -146,6 +146,7 @@ async function getUserProfileContext(phoneNumber) {
         return {
           voiceId: profile.voice_id || 'Puck',
           emotionalTrait: profile.emotional_trait || 'Empathetic and warm',
+          timezone: profile.timezone || 'America/New_York',
           contextString: `
 CRITICAL TEMPORAL CONTEXT:
 The current accurate local time for the user is: ${new Date().toLocaleString('en-US', { timeZone: profile.timezone || 'America/New_York' })}

@@ -481,19 +481,26 @@ After each response, analyze the conversation for wellness topics and be ready t
             </div>
         )}
 
-          <div className="w-64 h-64 rounded-full border border-slate-200 bg-white shadow-xl flex items-center justify-center relative transition-all">
+          <div className={`w-40 h-40 sm:w-52 sm:h-52 rounded-full flex items-center justify-center relative transition-all duration-300 ${isConnected ? 'bg-sky-50' : 'bg-slate-50'}`}>
             
-            {/* Animation ring */}
+            {/* Pulsing ring when connected */}
             {isConnected && (
-               <div className="absolute inset-0 rounded-full border border-wellness-blue animate-ping opacity-20"></div>
+               <>
+                 <div className="absolute inset-0 rounded-full border-2 border-wellness-blue animate-ping opacity-20"></div>
+                 <div className="absolute inset-[-4px] rounded-full border border-wellness-blue/30 animate-pulse"></div>
+               </>
             )}
             
-            {/* Visualizer inside circle */}
-            <div className="flex flex-col items-center gap-4">
-               <Visualizer isActive={isTalking || isConnected} />
-               <div className="text-sm font-mono text-slate-500 tracking-widest uppercase">
-                  {isConnected ? (isTalking ? `${selectedVoice.label} Speaking` : "Listening...") : "Offline"}
-               </div>
+            {/* MyParallel Logo as talk indicator */}
+            <img 
+              src="/images/Logo_MyParallel.png" 
+              alt="MyParallel" 
+              className={`w-24 h-24 sm:w-32 sm:h-32 object-contain transition-transform duration-200 ${isTalking ? 'scale-110' : isConnected ? 'scale-100' : 'scale-90 opacity-60'}`}
+            />
+            
+            {/* Status label */}
+            <div className={`absolute -bottom-6 text-xs font-medium tracking-wider uppercase ${isConnected ? 'text-wellness-blue' : 'text-slate-400'}`}>
+               {isConnected ? (isTalking ? 'Speaking' : 'Listening...') : 'Tap to start'}
             </div>
 
           </div>

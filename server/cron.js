@@ -60,14 +60,28 @@ export function startScheduler() {
       // 1. Fetch Calendar Events that should trigger this minute
       const { data: events, error: calendarError } = await supabase
         .from('calendar_events')
-        .select('*, user_profiles(phone_number, timezone)');
+        .select('*');
 
       if (calendarError) throw calendarError;
 
+      // Build a lookup of user_id -> phone_number/timezone from user_profiles
+      const userIds = [...new Set((events || []).map(e => e.user_id))];
+      let profileMap = {};
+      if (userIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from('user_profiles')
+          .select('id, phone_number, timezone')
+          .in('id', userIds);
+        if (profiles) {
+          for (const p of profiles) profileMap[p.id] = p;
+        }
+      }
+
       if (events && events.length > 0) {
         for (const event of events) {
-           const userNumber = event.user_profiles?.phone_number;
-           const timezone = event.user_profiles?.timezone || 'America/New_York';
+           const profile = profileMap[event.user_id];
+           const userNumber = profile?.phone_number;
+           const timezone = profile?.timezone || 'America/New_York';
            if (!userNumber) continue;
            
            // Determine if the current minute matches the event's start_time in the user's timezone
@@ -156,7 +170,7 @@ export function startScheduler() {
 
         if (currentMatch) {
           // Prevent double-calling if a calendar event already triggered a call this minute
-          const alreadyCalled = events?.some(e => e.user_profiles?.phone_number === user.phone_number);
+          const alreadyCalled = events?.some(e => profileMap[e.user_id]?.phone_number === user.phone_number);
           if (alreadyCalled) continue;
 
           console.log(`[Cron] Triggering Voice Call for Check-in: ${user.id} at ${currentTimeInUserTz}`);

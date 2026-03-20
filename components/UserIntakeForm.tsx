@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { UserProfile, Medication } from "../types";
+import { UserProfile } from "../types";
 import { VOICE_PRESETS } from '../constants';
 
 
@@ -11,7 +11,6 @@ interface UserIntakeFormProps {
   showOnlyCaregiverInfo?: boolean;
   showOnlyConditions?: boolean;
   showOnlyMedications?: boolean;
-  showOnlyCalendar?: boolean;
   showOnlyEmergency?: boolean;
 }
 
@@ -22,7 +21,6 @@ const UserIntakeForm: React.FC<UserIntakeFormProps> = ({
   showOnlyCaregiverInfo,
   showOnlyConditions,
   showOnlyMedications,
-  showOnlyCalendar,
   showOnlyEmergency
 }) => {
   const [formData, setFormData] = useState<Partial<UserProfile>>({
@@ -33,13 +31,10 @@ const UserIntakeForm: React.FC<UserIntakeFormProps> = ({
     caregiver_phone: null,
     caregiver_email: null,
     conditions: [],
-    medications: null,
     loneliness_level: 5,
     mobility_issues: false,
     cognitive_status: "normal",
     notes: null,
-    google_calendar_enabled: false,
-    apple_calendar_enabled: false,
     emergency_contact_name: null,
     emergency_contact_phone: null,
     phone_number: null,
@@ -50,11 +45,6 @@ const UserIntakeForm: React.FC<UserIntakeFormProps> = ({
   const [currentCheckinTime, setCurrentCheckinTime] = useState("");
   const [currentCheckinReason, setCurrentCheckinReason] = useState("");
   const [currentCondition, setCurrentCondition] = useState("");
-  const [currentMedication, setCurrentMedication] = useState<Medication>({
-    name: "",
-    dosage: "",
-    schedule: "",
-  });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [playingVoice, setPlayingVoice] = useState<string | null>(null);
 
@@ -90,7 +80,6 @@ const UserIntakeForm: React.FC<UserIntakeFormProps> = ({
     if (initialData) {
       setFormData({
         ...initialData,
-        medications: initialData.medications || null,
       });
     }
   }, [initialData]);
@@ -154,28 +143,7 @@ const UserIntakeForm: React.FC<UserIntakeFormProps> = ({
     }));
   };
 
-  const handleAddMedication = () => {
-    if (currentMedication.name.trim()) {
-      const newMedications = [...(formData.medications || []), { ...currentMedication }];
-      setFormData((prev) => ({
-        ...prev,
-        medications: newMedications,
-      }));
-      setCurrentMedication({ name: "", dosage: "", schedule: "" });
-    }
-  };
 
-  const handleRemoveMedication = (index: number) => {
-    const newMedications = formData.medications?.filter((_, i) => i !== index) || null;
-    setFormData((prev) => ({
-      ...prev,
-      medications: newMedications && newMedications.length > 0 ? newMedications : null,
-    }));
-  };
-
-  const handleMedicationChange = (field: keyof Medication, value: string) => {
-    setCurrentMedication((prev) => ({ ...prev, [field]: value }));
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -191,13 +159,11 @@ const UserIntakeForm: React.FC<UserIntakeFormProps> = ({
     }
   };
 
-  const isWizardMode = showOnlyPersonalInfo || showOnlyCaregiverInfo || showOnlyConditions || showOnlyMedications || showOnlyCalendar || showOnlyEmergency;
+  const isWizardMode = showOnlyPersonalInfo || showOnlyCaregiverInfo || showOnlyConditions || showOnlyMedications || showOnlyEmergency;
 
   const showPersonal = !isWizardMode || showOnlyPersonalInfo;
   const showConditions = !isWizardMode || showOnlyConditions;
-  const showMedications = !isWizardMode || showOnlyMedications;
   const showCaregiver = !isWizardMode || showOnlyCaregiverInfo;
-  const showCalendar = !isWizardMode || showOnlyCalendar;
   const showEmergency = !isWizardMode || showOnlyEmergency;
 
   return (
@@ -464,67 +430,7 @@ const UserIntakeForm: React.FC<UserIntakeFormProps> = ({
         </>
       )}
 
-      {showMedications && (
-        <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-sm">
-          <h3 className="text-xl sm:text-2xl font-semibold text-slate-900 mb-6">Medications</h3>
-          <div className="space-y-4 mb-4">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <input
-                type="text"
-                value={currentMedication.name}
-                onChange={(e) => handleMedicationChange("name", e.target.value)}
-                className="px-4 py-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-wellness-blue focus:border-wellness-blue text-base"
-                placeholder="Medication name"
-              />
-              <input
-                type="text"
-                value={currentMedication.dosage}
-                onChange={(e) => handleMedicationChange("dosage", e.target.value)}
-                className="px-4 py-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-wellness-blue focus:border-wellness-blue text-base"
-                placeholder="Dosage (e.g., 10mg)"
-              />
-              <input
-                type="text"
-                value={currentMedication.schedule}
-                onChange={(e) => handleMedicationChange("schedule", e.target.value)}
-                className="px-4 py-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-wellness-blue focus:border-wellness-blue text-base"
-                placeholder="Schedule (e.g., Morning, 8am)"
-              />
-            </div>
-            <button
-              type="button"
-              onClick={handleAddMedication}
-              className="px-6 py-3 bg-wellness-teal text-white rounded-lg font-semibold hover:bg-wellness-teal/90 transition-colors text-base"
-            >
-              Add Medication
-            </button>
-          </div>
-          {formData.medications && formData.medications.length > 0 && (
-            <div className="space-y-3">
-              {formData.medications.map((med, index) => (
-                <div
-                  key={index}
-                  className="flex items-center justify-between p-4 bg-slate-50 rounded-lg border border-slate-200"
-                >
-                  <div className="flex-1">
-                    <p className="font-semibold text-slate-900 text-base">{med.name}</p>
-                    <p className="text-sm text-slate-600">
-                      {med.dosage} • {med.schedule}
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveMedication(index)}
-                    className="ml-4 px-3 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors text-base"
-                  >
-                    Remove
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+
 
       {showCaregiver && (
         <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-sm">
@@ -575,50 +481,7 @@ const UserIntakeForm: React.FC<UserIntakeFormProps> = ({
         </div>
       )}
 
-      {showCalendar && (
-        <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-sm">
-          <h3 className="text-xl sm:text-2xl font-semibold text-slate-900 mb-6">Calendar Integration</h3>
-          <div className="space-y-4">
-            <div className="flex items-center justify-between p-4 bg-slate-50 rounded-lg">
-              <div>
-                <p className="font-semibold text-slate-900 text-base">Google Calendar</p>
-                <p className="text-sm text-slate-600">
-                  Sync medication reminders to your Google Calendar
-                </p>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  name="google_calendar_enabled"
-                  checked={formData.google_calendar_enabled || false}
-                  onChange={handleInputChange}
-                  className="sr-only peer"
-                />
-                <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-wellness-blue/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-wellness-blue"></div>
-              </label>
-            </div>
 
-            <div className="flex items-center justify-between p-4 bg-slate-50 rounded-lg">
-              <div>
-                <p className="font-semibold text-slate-900 text-base">Apple Calendar</p>
-                <p className="text-sm text-slate-600">
-                  Sync medication reminders to your Apple/iCloud Calendar
-                </p>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  name="apple_calendar_enabled"
-                  checked={formData.apple_calendar_enabled || false}
-                  onChange={handleInputChange}
-                  className="sr-only peer"
-                />
-                <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-wellness-blue/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-wellness-blue"></div>
-              </label>
-            </div>
-          </div>
-        </div>
-      )}
 
       {showEmergency && (
         <>

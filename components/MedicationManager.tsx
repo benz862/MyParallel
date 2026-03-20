@@ -11,6 +11,8 @@ const FREQUENCY_OPTIONS = [
   { value: 'three_times_daily', label: 'Three times daily' },
   { value: 'every_other_day', label: 'Every other day' },
   { value: 'weekly', label: 'Weekly' },
+  { value: 'bi_weekly', label: 'Every 2 weeks' },
+  { value: 'monthly', label: 'Monthly' },
   { value: 'prn', label: 'As needed (PRN)' },
 ];
 
@@ -108,7 +110,7 @@ const MedicationManager: React.FC<MedicationManagerProps> = ({ patientId }) => {
       const res = await fetch(`${UPLINK_URL}/api/medications`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ patientId, master: { ...master, dosage_strength: Number(master.dosage_strength) || null }, instructions, regimen: { ...regimen, assigned_dose_amount: Number(regimen.assigned_dose_amount) || null, effective_start_at: new Date(regimen.effective_start_at).toISOString() } }),
+        body: JSON.stringify({ patientId, master: { ...master, dosage_strength: master.dosage_strength || null }, instructions, regimen: { ...regimen, assigned_dose_amount: Number(regimen.assigned_dose_amount) || null, effective_start_at: new Date(regimen.effective_start_at).toISOString() } }),
       });
       const data = await res.json();
       if (data.success) {
@@ -304,9 +306,9 @@ const MedicationManager: React.FC<MedicationManagerProps> = ({ patientId }) => {
                   <div>
                     <label className="block text-sm font-semibold text-slate-700 mb-1">Strength</label>
                     <div className="flex gap-2">
-                      <input value={master.dosage_strength} onChange={e => setMaster(p => ({ ...p, dosage_strength: e.target.value }))} className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm" placeholder="10" type="number" />
+                      <input value={master.dosage_strength} onChange={e => setMaster(p => ({ ...p, dosage_strength: e.target.value }))} className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm" placeholder="e.g. 10, 100-12.5, 140/mL" />
                       <select value={master.strength_unit} onChange={e => setMaster(p => ({ ...p, strength_unit: e.target.value }))} className="px-3 py-2.5 border border-slate-300 rounded-xl text-sm bg-white">
-                        {['mg', 'mcg', 'g', 'mL', 'units', 'IU', 'meq', '%'].map(u => <option key={u} value={u}>{u}</option>)}
+                        {['mg', 'mg/mL', 'mcg', 'g', 'mL', 'units', 'IU', 'meq', '%'].map(u => <option key={u} value={u}>{u}</option>)}
                       </select>
                     </div>
                   </div>

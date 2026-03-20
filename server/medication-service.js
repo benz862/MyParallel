@@ -69,6 +69,13 @@ function generateDoseTimestamps(version, fromDate, toDate, timezone) {
       } else {
         shouldInclude = true;
       }
+    } else if (freq === 'bi_weekly') {
+      const effectiveStart = new Date(version.effective_start_at);
+      const diffDays = Math.floor((day - effectiveStart) / (1000 * 60 * 60 * 24));
+      shouldInclude = diffDays % 14 === 0;
+    } else if (freq === 'monthly') {
+      const effectiveStart = new Date(version.effective_start_at);
+      shouldInclude = day.getDate() === effectiveStart.getDate();
     } else if (freq === 'prn') {
       shouldInclude = false; // PRN = as needed, no auto-schedule
     } else {

@@ -140,9 +140,8 @@ export function startScheduler() {
                    await triggerOutboundVoiceCall(userNumber, `Friendly Reminder: Your appointment "${event.title}" is in ${reminderMinutes} minutes.`);
                 }
             }
-           }
-         }
-       }
+            }
+          }
 
       // 2. Medication Dose Reminders — check upcoming doses from medication_schedule_events
       try {

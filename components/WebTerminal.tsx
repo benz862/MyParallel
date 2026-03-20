@@ -5,6 +5,9 @@ import VoiceDemo from './VoiceDemo';
 import CaregiverCalendar from './CaregiverCalendar';
 import MedicationManager from './MedicationManager';
 import MedicationAdherenceWidget from './MedicationAdherenceWidget';
+import DailyCareBoard from './DailyCareBoard';
+import VitalsTracker from './VitalsTracker';
+import FamilyManager from './FamilyManager';
 import BulkPatientUploader from './BulkPatientUploader';
 import UserIntakeForm from './UserIntakeForm';
 
@@ -42,7 +45,7 @@ const WebTerminal: React.FC = () => {
   const [patients, setPatients] = useState<any[]>([]);
   const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
   const [upcomingEvents, setUpcomingEvents] = useState<any[]>([]);
-  const [activeRightTab, setActiveRightTab] = useState<'schedule' | 'medications'>('schedule');
+  const [activeRightTab, setActiveRightTab] = useState<'schedule' | 'medications' | 'care' | 'vitals' | 'family'>('schedule');
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const UPLINK_URL = import.meta.env.DEV ? 'http://localhost:8081' : '';
@@ -352,37 +355,46 @@ const WebTerminal: React.FC = () => {
           {/* RIGHT COLUMN: Calendar (2/3 Width) */}
           <div className="w-full lg:w-[65%]">
              <div className="bg-white rounded-3xl shadow-sm border border-slate-200 p-2 sm:p-6 lg:p-8 h-full custom-scrollbar relative overflow-hidden">
-                 {/* Color Banner */}
-                 {selectedPatientId && (
-                     <div className={`absolute top-0 left-0 w-full h-2 ${PATIENT_COLORS[patients.findIndex(p => p.id === selectedPatientId) % PATIENT_COLORS.length].lightBg} border-b ${PATIENT_COLORS[patients.findIndex(p => p.id === selectedPatientId) % PATIENT_COLORS.length].border}`}></div>
-                 )}
-                 <div className="mb-6 mt-2">
-                     <div className="flex items-center gap-1 mb-4">
-                       <button onClick={() => setActiveRightTab('schedule')} className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors ${activeRightTab === 'schedule' ? 'bg-wellness-blue text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>📅 Schedule</button>
-                       <button onClick={() => setActiveRightTab('medications')} className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors ${activeRightTab === 'medications' ? 'bg-wellness-blue text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>💊 Medications</button>
-                     </div>
-                     {selectedPatientId ? (
-                         <p className={`text-sm font-bold mt-1 ${PATIENT_COLORS[patients.findIndex(p => p.id === selectedPatientId) % PATIENT_COLORS.length].text}`}>✓ Syncing {activeRightTab === 'schedule' ? 'schedule' : 'medications'} for {patients.find(p => p.id === selectedPatientId)?.full_name}</p>
-                     ) : (
-                         <p className="text-sm text-slate-500 mt-1">Select a patient on the left to filter events.</p>
-                     )}
-                 </div>
-                 <div className="overflow-x-auto pb-4">
-                     {activeRightTab === 'schedule' ? (
-                       <CaregiverCalendar 
-                          patientId={selectedPatientId} 
-                          themeColor={selectedPatientId ? PATIENT_COLORS[patients.findIndex(p => p.id === selectedPatientId) % PATIENT_COLORS.length] : undefined}
-                       />
-                     ) : selectedPatientId ? (
-                       <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                         <MedicationAdherenceWidget patientId={selectedPatientId} />
-                         <MedicationManager patientId={selectedPatientId} />
-                       </div>
-                     ) : (
-                       <div className="text-center py-12 text-slate-400">Select a patient to manage medications</div>
-                     )}
-                 </div>
-             </div>
+              {/* Color Banner */}
+              {selectedPatientId && (
+                <div className={`absolute top-0 left-0 w-full h-2 ${PATIENT_COLORS[patients.findIndex(p => p.id === selectedPatientId) % PATIENT_COLORS.length].lightBg} border-b ${PATIENT_COLORS[patients.findIndex(p => p.id === selectedPatientId) % PATIENT_COLORS.length].border}`}></div>
+              )}
+              <div className="mb-6 mt-2">
+                <div className="flex items-center gap-1 mb-4 flex-wrap">
+                  <button onClick={() => setActiveRightTab('schedule')} className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors ${activeRightTab === 'schedule' ? 'bg-wellness-blue text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>📅 Schedule</button>
+                  <button onClick={() => setActiveRightTab('medications')} className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors ${activeRightTab === 'medications' ? 'bg-wellness-blue text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>💊 Meds</button>
+                  <button onClick={() => setActiveRightTab('care')} className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors ${activeRightTab === 'care' ? 'bg-wellness-blue text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>📋 Care</button>
+                  <button onClick={() => setActiveRightTab('vitals')} className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors ${activeRightTab === 'vitals' ? 'bg-wellness-blue text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>🩺 Vitals</button>
+                  <button onClick={() => setActiveRightTab('family')} className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors ${activeRightTab === 'family' ? 'bg-wellness-blue text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>👨‍👩‍👧 Family</button>
+                </div>
+                {selectedPatientId ? (
+                  <p className={`text-sm font-bold mt-1 ${PATIENT_COLORS[patients.findIndex(p => p.id === selectedPatientId) % PATIENT_COLORS.length].text}`}>✓ Syncing {activeRightTab} for {patients.find(p => p.id === selectedPatientId)?.full_name}</p>
+                ) : (
+                  <p className="text-sm text-slate-500 mt-1">Select a patient on the left to view this tab.</p>
+                )}
+              </div>
+              <div className="overflow-x-auto pb-4">
+                {activeRightTab === 'schedule' ? (
+                  <CaregiverCalendar
+                    patientId={selectedPatientId}
+                    themeColor={selectedPatientId ? PATIENT_COLORS[patients.findIndex(p => p.id === selectedPatientId) % PATIENT_COLORS.length] : undefined}
+                  />
+                ) : activeRightTab === 'care' && selectedPatientId ? (
+                  <DailyCareBoard patientId={selectedPatientId} />
+                ) : activeRightTab === 'vitals' && selectedPatientId ? (
+                  <VitalsTracker patientId={selectedPatientId} />
+                ) : activeRightTab === 'family' && selectedPatientId ? (
+                  <FamilyManager patientId={selectedPatientId} />
+                ) : selectedPatientId ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                    <MedicationAdherenceWidget patientId={selectedPatientId} />
+                    <MedicationManager patientId={selectedPatientId} />
+                  </div>
+                ) : (
+                  <div className="text-center py-12 text-slate-400">Select a patient to view this tab</div>
+                )}
+              </div>
+            </div>
           </div>
 
         </div>

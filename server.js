@@ -9,6 +9,8 @@ import { createClient } from '@supabase/supabase-js';
 import cors from 'cors';
 import { startScheduler } from './server/cron.js';
 import { MedicationService } from './server/medication-service.js';
+import { CareTaskService } from './server/care-task-service.js';
+import { FamilyService } from './server/family-service.js';
 import { setupVoiceRelay } from './voice-relay.js';
 import { fileURLToPath } from 'url';
 import path from 'path';
@@ -362,6 +364,8 @@ app.post('/api/schedule-event', async (req, res) => {
 // MEDICATION API ENDPOINTS
 // ════════════════════════════════════════════════════
 const medService = supabase ? new MedicationService(supabase) : null;
+const careTaskService = supabase ? new CareTaskService(supabase) : null;
+const familyService = supabase ? new FamilyService(supabase) : null;
 
 // GET patient medications
 app.get('/api/medications/:patientId', async (req, res) => {
@@ -509,6 +513,307 @@ app.get('/api/medications/:patientId/adherence', async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 });
+
+// ════════════════════════════════════════════════════
+// DAILY CARE TASK API ENDPOINTS
+// ════════════════════════════════════════════════════
+app.get('/api/care-tasks/:patientId/:date', async (req, res) => {
+    if (!careTaskService) return res.status(500).json({ error: 'DB not configured' });
+    try {
+        // Auto-generate tasks for the date if they don't exist yet
+        await careTaskService.generateDailyTasks(req.params.patientId, req.params.date);
+        const tasks = await careTaskService.getTasksForDate(req.params.patientId, req.params.date);
+        res.json(tasks);
+    } catch (err) {
+        console.error('GET care tasks error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.put('/api/care-tasks/:taskId/status', async (req, res) => {
+    if (!careTaskService) return res.status(500).json({ error: 'DB not configured' });
+    try {
+        const data = await careTaskService.updateTaskStatus(req.params.taskId, req.body.status, req.body.completedBy, req.body.notes);
+
+        // Family alert on completion
+        if (familyService && req.body.status === 'completed' && data.patient_id) {
+            familyService.createAlert(data.patient_id, {
+                alert_type: 'care_task_completed',
+                severity: 'info',
+                title: `✅ ${data.title} completed`,
+                body: data.notes || `Task completed at ${new Date().toLocaleTimeString()}`,
+                reference_type: 'care_task',
+                reference_id: data.id,
+            }).catch(e => console.error('Family alert error:', e));
+        }
+
+        res.json(data);
+    } catch (err) {
+        console.error('PUT care task status error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/care-tasks/:patientId/quick', async (req, res) => {
+    if (!careTaskService) return res.status(500).json({ error: 'DB not configured' });
+    try {
+        const data = await careTaskService.addQuickTask(req.params.patientId, req.body.date, req.body.title, req.body.category, req.body.priority);
+        res.json(data);
+    } catch (err) {
+        console.error('POST quick task error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.get('/api/care-tasks/:patientId/:date/summary', async (req, res) => {
+    if (!careTaskService) return res.status(500).json({ error: 'DB not configured' });
+    try {
+        const data = await careTaskService.getDailySummary(req.params.patientId, req.params.date);
+        res.json(data);
+    } catch (err) {
+        console.error('GET task summary error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Templates
+app.get('/api/care-templates/:patientId', async (req, res) => {
+    if (!careTaskService) return res.status(500).json({ error: 'DB not configured' });
+    try {
+        res.json(await careTaskService.getTemplates(req.params.patientId));
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/care-templates', async (req, res) => {
+    if (!careTaskService) return res.status(500).json({ error: 'DB not configured' });
+    try {
+        res.json(await careTaskService.createTemplate(req.body));
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.put('/api/care-templates/:templateId', async (req, res) => {
+    if (!careTaskService) return res.status(500).json({ error: 'DB not configured' });
+    try {
+        res.json(await careTaskService.updateTemplate(req.params.templateId, req.body));
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/care-templates/:patientId/seed', async (req, res) => {
+    if (!careTaskService) return res.status(500).json({ error: 'DB not configured' });
+    try {
+        res.json(await careTaskService.seedDefaultTemplates(req.params.patientId));
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ════════════════════════════════════════════════════
+// HEALTH VITALS API ENDPOINTS
+// ════════════════════════════════════════════════════
+app.post('/api/vitals', async (req, res) => {
+    if (!supabase) return res.status(500).json({ error: 'DB not configured' });
+    try {
+        const { data, error } = await supabase.from('health_vitals_logs').insert(req.body).select().single();
+        if (error) throw error;
+
+        // Family alert for abnormal vitals
+        if (familyService && req.body.patient_id) {
+            const alerts = [];
+            if (req.body.blood_pressure_systolic > 160 || req.body.blood_pressure_diastolic > 100) alerts.push('High blood pressure');
+            if (req.body.oxygen_saturation && req.body.oxygen_saturation < 92) alerts.push('Low oxygen');
+            if (req.body.temperature && req.body.temperature > 100.4) alerts.push('Fever detected');
+            if (req.body.blood_glucose && (req.body.blood_glucose < 70 || req.body.blood_glucose > 250)) alerts.push('Abnormal blood glucose');
+
+            if (alerts.length > 0) {
+                familyService.createAlert(req.body.patient_id, {
+                    alert_type: 'vitals_alert',
+                    severity: 'warning',
+                    title: `⚠️ Vital Alert: ${alerts.join(', ')}`,
+                    body: `Recorded at ${new Date().toLocaleTimeString()}. Please check on the patient.`,
+                    reference_type: 'vitals',
+                    reference_id: data.id,
+                }).catch(e => console.error('Family vitals alert error:', e));
+            }
+        }
+
+        res.json(data);
+    } catch (err) {
+        console.error('POST vitals error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.get('/api/vitals/:patientId', async (req, res) => {
+    if (!supabase) return res.status(500).json({ error: 'DB not configured' });
+    try {
+        const from = req.query.from || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+        const to = req.query.to || new Date().toISOString();
+        const { data, error } = await supabase
+            .from('health_vitals_logs')
+            .select('*')
+            .eq('patient_id', req.params.patientId)
+            .gte('recorded_at', from)
+            .lte('recorded_at', to)
+            .order('recorded_at', { ascending: false });
+        if (error) throw error;
+        res.json(data);
+    } catch (err) {
+        console.error('GET vitals error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.get('/api/vitals/:patientId/latest', async (req, res) => {
+    if (!supabase) return res.status(500).json({ error: 'DB not configured' });
+    try {
+        const { data, error } = await supabase
+            .from('health_vitals_logs')
+            .select('*')
+            .eq('patient_id', req.params.patientId)
+            .order('recorded_at', { ascending: false })
+            .limit(1)
+            .single();
+        if (error && error.code !== 'PGRST116') throw error;
+        res.json(data || null);
+    } catch (err) {
+        console.error('GET latest vitals error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ════════════════════════════════════════════════════
+// INCIDENT API ENDPOINTS
+// ════════════════════════════════════════════════════
+app.get('/api/incidents/:patientId', async (req, res) => {
+    if (!supabase) return res.status(500).json({ error: 'DB not configured' });
+    try {
+        const { data, error } = await supabase
+            .from('incidents')
+            .select('*')
+            .eq('patient_id', req.params.patientId)
+            .order('occurred_at', { ascending: false })
+            .limit(50);
+        if (error) throw error;
+        res.json(data);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/incidents', async (req, res) => {
+    if (!supabase) return res.status(500).json({ error: 'DB not configured' });
+    try {
+        const { data, error } = await supabase.from('incidents').insert(req.body).select().single();
+        if (error) throw error;
+
+        // Family urgent alert for high-severity incidents
+        if (familyService && req.body.patient_id && (req.body.severity === 'high' || req.body.severity === 'critical')) {
+            familyService.createAlert(req.body.patient_id, {
+                alert_type: 'incident',
+                severity: req.body.severity === 'critical' ? 'critical' : 'urgent',
+                title: `🚨 ${req.body.incident_type.replace(/_/g, ' ').toUpperCase()}: ${req.body.title}`,
+                body: req.body.description || 'An incident has been reported. Please check for details.',
+                reference_type: 'incident',
+                reference_id: data.id,
+            }).catch(e => console.error('Family incident alert error:', e));
+        }
+
+        res.json(data);
+    } catch (err) {
+        console.error('POST incident error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.put('/api/incidents/:incidentId', async (req, res) => {
+    if (!supabase) return res.status(500).json({ error: 'DB not configured' });
+    try {
+        const { data, error } = await supabase
+            .from('incidents')
+            .update({ ...req.body, updated_at: new Date().toISOString() })
+            .eq('id', req.params.incidentId)
+            .select().single();
+        if (error) throw error;
+        res.json(data);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ════════════════════════════════════════════════════
+// FAMILY CARE API ENDPOINTS
+// ════════════════════════════════════════════════════
+app.get('/api/family/:patientId/members', async (req, res) => {
+    if (!familyService) return res.status(500).json({ error: 'DB not configured' });
+    try {
+        res.json(await familyService.getFamilyMembers(req.params.patientId));
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/family/:patientId/invite', async (req, res) => {
+    if (!familyService) return res.status(500).json({ error: 'DB not configured' });
+    try {
+        const result = await familyService.inviteFamilyMember(req.params.patientId, req.body, req.body.invitedBy);
+        res.json(result);
+    } catch (err) {
+        console.error('POST family invite error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/family/accept-invite', async (req, res) => {
+    if (!familyService) return res.status(500).json({ error: 'DB not configured' });
+    try {
+        const member = await familyService.acceptInvite(req.body.inviteCode, req.body.userId);
+        res.json(member);
+    } catch (err) {
+        console.error('POST accept invite error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.get('/api/family/invite/:inviteCode', async (req, res) => {
+    if (!familyService) return res.status(500).json({ error: 'DB not configured' });
+    try {
+        const data = await familyService.lookupByInviteCode(req.params.inviteCode);
+        res.json(data);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.put('/api/family/:memberId/permissions', async (req, res) => {
+    if (!familyService) return res.status(500).json({ error: 'DB not configured' });
+    try {
+        res.json(await familyService.updatePermissions(req.params.memberId, req.body));
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.delete('/api/family/:memberId', async (req, res) => {
+    if (!familyService) return res.status(500).json({ error: 'DB not configured' });
+    try {
+        await familyService.removeFamilyMember(req.params.memberId);
+        res.json({ success: true });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.get('/api/family/:memberId/dashboard', async (req, res) => {
+    if (!familyService) return res.status(500).json({ error: 'DB not configured' });
+    try {
+        res.json(await familyService.getFamilyDashboardData(req.params.memberId));
+    } catch (err) {
+        console.error('GET family dashboard error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.get('/api/family/:memberId/alerts', async (req, res) => {
+    if (!familyService) return res.status(500).json({ error: 'DB not configured' });
+    try {
+        res.json(await familyService.getAlerts(req.params.memberId, parseInt(req.query.limit) || 50));
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.put('/api/family/alerts/:alertId/read', async (req, res) => {
+    if (!familyService) return res.status(500).json({ error: 'DB not configured' });
+    try {
+        await familyService.markAlertRead(req.params.alertId);
+        res.json({ success: true });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 app.post('/api/trigger-call', async (req, res) => {
     if (!twilioClient) return res.status(500).json({ error: 'Twilio not configured' });
     const { phoneNumber } = req.body;

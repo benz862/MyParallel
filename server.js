@@ -71,10 +71,29 @@ async function getHistory(userNumber, limit = 10) {
 async function scheduleCalendarEvent(userNumber, title, description, startTime, reminderMinutes = 0) {
     if (!supabase || !userNumber) return false;
     try {
-        const { data: profile } = await supabase.from('user_profiles').select('id, full_name, caregiver_name').eq('phone_number', userNumber).single();
+        const { data: profile } = await supabase.from('user_profiles').select('id, full_name, caregiver_name, timezone').eq('phone_number', userNumber).single();
         if (!profile) return false;
         
-        const start = new Date(startTime);
+        // The AI often sends times as UTC (+00:00/Z) even when told to use local time.
+        // Detect this and interpret the time as the user's intended local time.
+        const userTz = profile.timezone || 'America/New_York';
+        let start;
+        if (startTime.endsWith('+00:00') || startTime.endsWith('Z') || startTime.endsWith('+0000')) {
+            // AI used UTC — strip the offset and interpret as local time
+            const naiveTime = startTime.replace(/[Z+].*$/, '');
+            // Create Date in user's timezone by using toLocaleString trick
+            const fakeUtc = new Date(naiveTime + 'Z'); // parse as UTC first
+            const utcMs = fakeUtc.getTime();
+            // Get the timezone offset for this user's timezone at this time
+            const localStr = fakeUtc.toLocaleString('en-US', { timeZone: userTz });
+            const localDate = new Date(localStr);
+            const offsetMs = utcMs - localDate.getTime();
+            start = new Date(utcMs + offsetMs);
+            console.log(`[Schedule] AI sent UTC time ${startTime}, reinterpreted as ${userTz}: ${start.toISOString()}`);
+        } else {
+            // AI included a proper offset like -04:00, trust it
+            start = new Date(startTime);
+        }
         const end = new Date(start.getTime() + 60*60*1000); // Default to 1 hour appt
         
         // 1. Insert Event

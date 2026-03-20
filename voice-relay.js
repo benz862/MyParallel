@@ -183,8 +183,8 @@ User Profile Data: \n\n${contextString}` }]
             }
           });
 
-          geminiWs.on("close", () => console.log("[WebRTC] Gemini Stream Closed"));
-          geminiWs.on("error", (err) => console.error("[WebRTC] Gemini Error:", err));
+          geminiWs.on("close", (code, reason) => console.log(`[WebRTC] Gemini Stream Closed code=${code} reason=${reason || 'none'}`));
+          geminiWs.on("error", (err) => console.error("[WebRTC] Gemini Error:", err.message || err));
         }
 
         if (msg.event === "media") {

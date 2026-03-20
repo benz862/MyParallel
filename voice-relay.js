@@ -11,6 +11,7 @@ export function setupVoiceRelay(server, getContextCallback, saveMessageCallback,
     let streamSid = null;
     let geminiWs = null;
     let activeUserNumber = null; // Hoisted above the loop to prevent fatal ReferenceErrors on Twilio disconnect
+    const processedCallIds = new Set(); // Dedup: track function call IDs to prevent triple inserts
 
     console.log("[WebRTC] Twilio Media Stream Connected");
 
@@ -57,7 +58,7 @@ export function setupVoiceRelay(server, getContextCallback, saveMessageCallback,
                       properties: {
                         title: { type: "STRING", description: "Short title of the event" },
                         description: { type: "STRING", description: "Details of the event" },
-                        start_time: { type: "STRING", description: "ISO 8601 formatted start time (e.g. 2026-03-20T15:00:00Z)" }
+                        start_time: { type: "STRING", description: "ISO 8601 formatted start time in the user's LOCAL timezone (e.g. 2026-03-20T15:00:00-04:00)" }
                       },
                       required: ["title", "description", "start_time"]
                     }
@@ -70,9 +71,11 @@ export function setupVoiceRelay(server, getContextCallback, saveMessageCallback,
                 systemInstruction: {
                   parts: [{
                     text: `You are MyParallel responding to a check-in phone call. Adopt this personality trait: ${emotionalTrait}. Keep responses extremely brief (1 short sentence max). Do not use filler formatting. 
+
+IMPORTANT: The current date and time is ${new Date().toLocaleString('en-US', { timeZone: 'America/New_York', dateStyle: 'full', timeStyle: 'short' })}. The user's timezone is America/New_York (Eastern Time). When scheduling appointments, ALWAYS use Eastern Time with the -04:00 offset (e.g. 2026-03-20T15:00:00-04:00). NEVER schedule in UTC.
               
 CRITICAL RULES:
-1. You have a TOOL BLOCK installed called "schedule_calendar_event". If the user asks to schedule an appointment or check-in, YOU ABSOLUTELY MUST EMIT THIS FUNCTION CALL! DO NOT verbally agree without emitting the physical function block! If you say "I will schedule that" without firing the tool, the entire database crashes. Use the tool physically!
+1. You have a TOOL BLOCK installed called "schedule_calendar_event". If the user asks to schedule an appointment or check-in, YOU ABSOLUTELY MUST EMIT THIS FUNCTION CALL EXACTLY ONCE. DO NOT verbally agree without emitting the physical function block! Only call the tool ONE TIME per appointment request.
 
 User Profile Data: \n\n${contextString}` }]
                 }
@@ -104,6 +107,12 @@ User Profile Data: \n\n${contextString}` }]
               console.log("[Proxy] TOP-LEVEL TOOL CALL INTERCEPTED:", JSON.stringify(response.toolCall));
               for (const fc of response.toolCall.functionCalls) {
                 if (fc.name === 'schedule_calendar_event' && scheduleEventCallback) {
+                  // Dedup: skip if we already processed this exact call ID
+                  if (fc.id && processedCallIds.has(fc.id)) {
+                    console.log(`[Proxy] SKIPPING DUPLICATE toolCall id=${fc.id}`);
+                    continue;
+                  }
+                  if (fc.id) processedCallIds.add(fc.id);
                   console.log(`[Proxy] Executing scheduleEventCallback for ${activeUserNumber}...`, fc.args);
                   scheduleEventCallback(activeUserNumber, fc.args.title, fc.args.description, fc.args.start_time).then(success => {
                     console.log(`[Proxy] DB Insert Result: ${success} -> Sending toolResponse to Gemini...`);

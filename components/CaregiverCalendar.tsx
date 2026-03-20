@@ -34,6 +34,11 @@ const CaregiverCalendar: React.FC<CaregiverCalendarProps> = ({ patientId, themeC
   const [loading, setLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [editingEventId, setEditingEventId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+  const [editTime, setEditTime] = useState('');
+  const [editReminder, setEditReminder] = useState(0);
 
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(new Date());
@@ -142,7 +147,44 @@ const CaregiverCalendar: React.FC<CaregiverCalendarProps> = ({ patientId, themeC
       try {
           await supabase.from('calendar_events').delete().eq('id', id);
           setEvents(prev => prev.filter(e => e.id !== id));
+          if (editingEventId === id) setEditingEventId(null);
       } catch (err) { console.error("Failed to delete", err); }
+  };
+
+  const startEditing = (event: CalendarEvent) => {
+      setEditingEventId(event.id);
+      setEditTitle(event.title);
+      setEditDescription(event.description);
+      try {
+        setEditTime(format(new Date(event.start_time), 'HH:mm'));
+      } catch { setEditTime('09:00'); }
+      setEditReminder((event as any).reminder_minutes || 0);
+  };
+
+  const handleUpdateEvent = async () => {
+      if (!editingEventId || !patientId) return;
+      const event = events.find(e => e.id === editingEventId);
+      if (!event) return;
+      try {
+          const dateStr = format(new Date(event.start_time), 'yyyy-MM-dd');
+          const newStart = new Date(`${dateStr}T${editTime}:00`).toISOString();
+          const newEnd = new Date(new Date(newStart).getTime() + 60*60*1000).toISOString();
+          const { error: updateError } = await supabase
+              .from('calendar_events')
+              .update({
+                  title: editTitle,
+                  description: editDescription,
+                  start_time: newStart,
+                  end_time: newEnd,
+                  reminder_minutes: editReminder
+              })
+              .eq('id', editingEventId);
+          if (updateError) throw updateError;
+          setEditingEventId(null);
+          fetchEvents();
+      } catch (err: any) {
+          setError(err.message || 'Failed to update event');
+      }
   };
 
   if (loading) return <div className="p-8 text-center text-slate-500 animate-pulse">Loading calendar...</div>;
@@ -330,21 +372,61 @@ const CaregiverCalendar: React.FC<CaregiverCalendarProps> = ({ patientId, themeC
              </div>
          ) : (
              <div className="space-y-3">
-                {selectedDateEvents.map(event => (
-                   <div key={event.id} className="bg-white p-4 border border-slate-200 rounded-xl flex items-start gap-4">
-                      <div className="bg-sky-50 text-wellness-blue font-bold px-3 py-2 rounded border border-sky-100 text-sm">
-                           {(() => { try { return format(new Date(event.start_time), 'h:mm a'); } catch { return 'N/A'; } })()}
-                      </div>
-                      <div className="flex-1">
-                          <h4 className="font-bold text-slate-800 flex items-center gap-2">
-                             {event.title}
-                             {event.repeat_type !== 'none' && <span className="text-[10px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full uppercase tracking-wider">{event.repeat_type}</span>}
-                          </h4>
-                          <p className="text-sm text-slate-600 mt-1">{event.description}</p>
-                      </div>
-                      <button onClick={(e) => handleDelete(event.id, e)} className="text-red-400 hover:text-red-600 p-2">✕</button>
-                   </div>
-                ))}
+                {selectedDateEvents.map(event => {
+                   const isEditing = editingEventId === event.id;
+                   return (
+                    <div key={event.id} className={`bg-white p-4 border rounded-xl transition-all ${isEditing ? 'border-wellness-blue ring-1 ring-wellness-blue/20' : 'border-slate-200'}`}>
+                      {isEditing ? (
+                        <div className="space-y-3">
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wider">Title</label>
+                            <input type="text" value={editTitle} onChange={e => setEditTitle(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded text-sm focus:ring-1 focus:ring-wellness-blue" />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wider">Description</label>
+                            <textarea value={editDescription} onChange={e => setEditDescription(e.target.value)} rows={2} className="w-full px-3 py-2 border border-slate-300 rounded text-sm focus:ring-1 focus:ring-wellness-blue" />
+                          </div>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wider">Time</label>
+                              <input type="time" value={editTime} onChange={e => setEditTime(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded text-sm focus:ring-1 focus:ring-wellness-blue" />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wider">Reminder</label>
+                              <select value={editReminder} onChange={e => setEditReminder(Number(e.target.value))} className="w-full px-3 py-2 border border-slate-300 rounded text-sm focus:ring-1 focus:ring-wellness-blue">
+                                <option value={0}>No reminder</option>
+                                <option value={5}>5 min before</option>
+                                <option value={15}>15 min before</option>
+                                <option value={30}>30 min before</option>
+                                <option value={60}>1 hour before</option>
+                              </select>
+                            </div>
+                          </div>
+                          <div className="flex gap-2 pt-1">
+                            <button onClick={handleUpdateEvent} className="flex-1 py-2 bg-wellness-blue text-white rounded font-semibold text-sm hover:bg-sky-600">Save</button>
+                            <button onClick={() => setEditingEventId(null)} className="flex-1 py-2 bg-slate-100 text-slate-600 rounded font-semibold text-sm hover:bg-slate-200">Cancel</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-start gap-4">
+                          <div className="bg-sky-50 text-wellness-blue font-bold px-3 py-2 rounded border border-sky-100 text-sm">
+                               {(() => { try { return format(new Date(event.start_time), 'h:mm a'); } catch { return 'N/A'; } })()}
+                          </div>
+                          <div className="flex-1 cursor-pointer" onClick={() => startEditing(event)}>
+                              <h4 className="font-bold text-slate-800 flex items-center gap-2">
+                                 {event.title}
+                                 {event.repeat_type !== 'none' && <span className="text-[10px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full uppercase tracking-wider">{event.repeat_type}</span>}
+                              </h4>
+                              <p className="text-sm text-slate-600 mt-1">{event.description}</p>
+                              {(event as any).reminder_minutes > 0 && <p className="text-[10px] text-amber-600 mt-1">🔔 {(event as any).reminder_minutes} min reminder</p>}
+                              <p className="text-[10px] text-slate-400 mt-1 italic">Click to edit</p>
+                          </div>
+                          <button onClick={(e) => handleDelete(event.id, e)} className="text-red-400 hover:text-red-600 p-2">✕</button>
+                        </div>
+                      )}
+                    </div>
+                   );
+                })}
              </div>
          )}
       </div>

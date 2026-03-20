@@ -482,6 +482,8 @@ app.post('/api/twilio/voice', async (req, res) => {
         const connect = twiml.connect();
         const stream = connect.stream({ url: wsUrl });
         stream.parameter({ name: 'userNumber', value: userNumber });
+        const callReason = req.query.callReason || '';
+        if (callReason) stream.parameter({ name: 'callReason', value: callReason });
 
     } catch (err) {
         console.error('Twilio Voice Webhook Generation Error:', err);

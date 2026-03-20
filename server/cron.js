@@ -192,7 +192,7 @@ async function triggerOutboundVoiceCall(userNumber, logReason) {
       console.error("[Cron] CRITICAL: Neither RENDER_EXTERNAL_URL nor NGROK_URL is set. Cannot trigger outbound calls.");
       return;
   }
-  const webhookUrl = `${baseUrl}/api/twilio/voice`;
+  const webhookUrl = `${baseUrl}/api/twilio/voice?callReason=${encodeURIComponent(logReason)}`;
   console.log(`[Cron] Using webhook URL: ${webhookUrl}`);
 
   try {

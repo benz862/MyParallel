@@ -22,7 +22,9 @@ export function setupVoiceRelay(server, getContextCallback, saveMessageCallback,
         if (msg.event === "start") {
           streamSid = msg.start.streamSid;
           activeUserNumber = msg.start.customParameters?.userNumber;
-          console.log(`[Proxy] Twilio Socket Started for userNumber: ${activeUserNumber}`);
+          const callReason = msg.start.customParameters?.callReason || '';
+          console.log(`[Proxy] Twilio Socket Started for userNumber: ${activeUserNumber}, callReason: ${callReason || '(none)'}`);
+
           let contextString = "";
           let voiceId = "Puck";
           let emotionalTrait = "Empathetic and warm";
@@ -107,11 +109,14 @@ User Profile Data: \n\n${contextString}` }]
               if (saveMessageCallback && activeUserNumber) {
                 saveMessageCallback(activeUserNumber, 'system', '[System] 📞 Patient answered the phone call. Secure Voice Bridge Connected.', null, 'call');
               }
+              const greetingText = callReason
+                ? `You are calling because: ${callReason}. Please introduce yourself briefly and immediately tell the patient about this reminder. Be concise — one or two sentences max.`
+                : `Hi, I just answered the phone. Please introduce yourself immediately and reference your context to start the conversation.`;
               const greetingMsg = {
                 clientContent: {
                   turns: [{
                     role: "user",
-                    parts: [{ text: "Hi, I just answered the phone. Please introduce yourself immediately and reference your context to start the conversation." }]
+                    parts: [{ text: greetingText }]
                   }],
                   turnComplete: true
                 }

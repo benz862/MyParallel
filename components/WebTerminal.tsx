@@ -4,6 +4,7 @@ import { supabase } from '../utils/supabase';
 import VoiceDemo from './VoiceDemo';
 import CaregiverCalendar from './CaregiverCalendar';
 import MedicationManager from './MedicationManager';
+import MedicationAdherenceWidget from './MedicationAdherenceWidget';
 import BulkPatientUploader from './BulkPatientUploader';
 import UserIntakeForm from './UserIntakeForm';
 
@@ -373,7 +374,10 @@ const WebTerminal: React.FC = () => {
                           themeColor={selectedPatientId ? PATIENT_COLORS[patients.findIndex(p => p.id === selectedPatientId) % PATIENT_COLORS.length] : undefined}
                        />
                      ) : selectedPatientId ? (
-                       <MedicationManager patientId={selectedPatientId} />
+                       <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                         <MedicationAdherenceWidget patientId={selectedPatientId} />
+                         <MedicationManager patientId={selectedPatientId} />
+                       </div>
                      ) : (
                        <div className="text-center py-12 text-slate-400">Select a patient to manage medications</div>
                      )}

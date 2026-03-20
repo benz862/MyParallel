@@ -457,6 +457,58 @@ app.get('/api/medications/:assignmentId/audit', async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 });
+
+// Daily medication adherence summary
+app.get('/api/medications/:patientId/adherence', async (req, res) => {
+    if (!supabase) return res.status(500).json({ error: 'DB not configured' });
+    try {
+        const { patientId } = req.params;
+        const date = req.query.date || new Date().toISOString().split('T')[0];
+        const dayStart = `${date}T00:00:00.000Z`;
+        const dayEnd = `${date}T23:59:59.999Z`;
+
+        const { data: events, error } = await supabase
+            .from('medication_schedule_events')
+            .select('*')
+            .eq('patient_id', patientId)
+            .is('invalidated_at', null)
+            .gte('scheduled_for', dayStart)
+            .lte('scheduled_for', dayEnd)
+            .order('scheduled_for', { ascending: true });
+
+        if (error) throw error;
+
+        const summary = {
+            date,
+            total: (events || []).length,
+            taken: 0, missed: 0, refused: 0, held: 0, due: 0,
+            medications: {}
+        };
+
+        for (const ev of (events || [])) {
+            summary[ev.status] = (summary[ev.status] || 0) + 1;
+            const name = ev.medication_name || 'Unknown';
+            if (!summary.medications[name]) {
+                summary.medications[name] = { total: 0, taken: 0, missed: 0, refused: 0, held: 0, due: 0, doses: [] };
+            }
+            summary.medications[name].total++;
+            summary.medications[name][ev.status] = (summary.medications[name][ev.status] || 0) + 1;
+            summary.medications[name].doses.push({
+                id: ev.id,
+                time: ev.scheduled_for,
+                status: ev.status,
+                dose_text: ev.dose_text,
+                route: ev.route,
+                instructions: ev.instruction_summary
+            });
+        }
+
+        res.json(summary);
+    } catch (err) {
+        console.error('GET adherence error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
 app.post('/api/trigger-call', async (req, res) => {
     if (!twilioClient) return res.status(500).json({ error: 'Twilio not configured' });
     const { phoneNumber } = req.body;

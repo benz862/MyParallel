@@ -138,11 +138,77 @@ export function startScheduler() {
                } else if (reminderTimeStr === currentTimeStr) {
                    console.log(`[Cron] Triggering ${reminderMinutes}-min Reminder CALL for: ${event.title} to ${userNumber}`);
                    await triggerOutboundVoiceCall(userNumber, `Friendly Reminder: Your appointment "${event.title}" is in ${reminderMinutes} minutes.`);
-               }
+                }
+            }
            }
-        }
-      }
+         }
+       }
 
+      // 2. Medication Dose Reminders — check upcoming doses from medication_schedule_events
+      try {
+        const windowStart = new Date(now);
+        windowStart.setSeconds(0, 0);
+        const windowEnd = new Date(now);
+        windowEnd.setSeconds(59, 999);
+
+        const { data: medDoses, error: medErr } = await supabase
+          .from('medication_schedule_events')
+          .select('*')
+          .eq('status', 'due')
+          .is('invalidated_at', null)
+          .gte('scheduled_for', windowStart.toISOString())
+          .lte('scheduled_for', windowEnd.toISOString());
+
+        if (medErr) console.error('[Cron] Med schedule query error:', medErr);
+
+        if (medDoses && medDoses.length > 0) {
+          // Collect unique patient IDs and look up their phone numbers
+          const patientIds = [...new Set(medDoses.map(d => d.patient_id))];
+          const { data: patientProfiles } = await supabase
+            .from('user_profiles')
+            .select('id, phone_number, timezone, caregiver_name, caregiver_phone, preferred_name, full_name')
+            .in('id', patientIds);
+
+          const patientMap = {};
+          if (patientProfiles) {
+            for (const p of patientProfiles) patientMap[p.id] = p;
+          }
+
+          for (const dose of medDoses) {
+            const patient = patientMap[dose.patient_id];
+            if (!patient) continue;
+
+            const patientName = patient.preferred_name || patient.full_name || 'your patient';
+            const medName = dose.medication_name || 'medication';
+            const doseText = dose.dose_text || '';
+            const route = dose.route || '';
+            const instructions = dose.instruction_summary || '';
+            const reminderMsg = `Medication Reminder: It's time for ${patientName} to take ${medName}${doseText ? ' (' + doseText + ')' : ''}${route ? ' via ' + route : ''}.${instructions ? ' Instructions: ' + instructions : ''}`;
+
+            // Call the patient if they have a phone number
+            if (patient.phone_number) {
+              console.log(`[Cron] Triggering Medication Reminder CALL for: ${medName} to patient ${patient.phone_number}`);
+              await triggerOutboundVoiceCall(patient.phone_number, reminderMsg);
+            }
+
+            // Also SMS the caregiver if they have a phone number
+            if (patient.caregiver_phone) {
+              console.log(`[Cron] Sending Medication Reminder SMS to caregiver ${patient.caregiver_phone}`);
+              try {
+                await twilioClient.messages.create({
+                  from: TWILIO_PHONE_NUMBER,
+                  to: patient.caregiver_phone,
+                  body: `💊 ${reminderMsg}`
+                });
+              } catch (smsErr) {
+                console.error(`[Cron] Failed to SMS caregiver:`, smsErr.message);
+              }
+            }
+          }
+        }
+      } catch (medCronErr) {
+        console.error('[Cron] Medication reminder error:', medCronErr);
+      }
       // 2. Fallback: Fetch legacy 12-hour checkin_times
       const { data: users, error } = await supabase
         .from('user_profiles')

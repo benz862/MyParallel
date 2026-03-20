@@ -164,14 +164,14 @@ async function getUserProfileContext(phoneNumber) {
             }
         } catch(err) { console.error('Failed fetching calendar context', err); }
 
-        // Fetch medications from the new structured tables
+        // Fetch medications using the SAME service the Meds tab UI uses
         let medicationContext = "None specified";
         try {
-            const { data: medAssignments } = await supabase
-                .from('patient_medication_assignments')
-                .select('*, medications_master(*), patient_medication_versions(*)')
-                .eq('patient_id', profile.id)
-                .in('status', ['active', 'on_hold']);
+            const medServiceInstance = new MedicationService(supabase);
+            const medAssignments = await medServiceInstance.getPatientMedications(profile.id);
+            
+            console.log(`[VA Context] Medications for patient ${profile.preferred_name || profile.full_name} (${profile.id}): ${medAssignments?.length || 0} found:`, 
+                (medAssignments || []).map(a => a.medications_master?.name || 'UNNAMED').join(', '));
             
             if (medAssignments && medAssignments.length > 0) {
                 medicationContext = medAssignments.map(a => {
@@ -181,11 +181,12 @@ async function getUserProfileContext(phoneNumber) {
                     const freq = v?.frequency_type?.replace(/_/g, ' ') || '';
                     const route = v?.route || '';
                     const times = (v?.specific_times || []).join(', ');
-                    const instructions = v?.snapshot_instruction_summary || '';
+                    const instrSummary = v?.snapshot_instruction_summary || '';
                     const status = a.status === 'on_hold' ? ' [ON HOLD]' : '';
-                    return `- ${m.name || 'Unknown'}${strength ? ' ' + strength : ''}${status}: ${freq}${route ? ' (' + route + ')' : ''}${times ? ' at ' + times : ''}${instructions ? ' | Instructions: ' + instructions : ''}`;
+                    return `- ${m.name || 'Unknown'}${strength ? ' ' + strength : ''}${status}: ${freq}${route ? ' (' + route + ')' : ''}${times ? ' at ' + times : ''}${instrSummary ? ' | Instructions: ' + instrSummary : ''}`;
                 }).join('\n');
             }
+            console.log(`[VA Context] Final medication context:\n${medicationContext}`);
         } catch(err) { console.error('Failed fetching medication context', err); }
 
         // Fetch today's medication dose schedule

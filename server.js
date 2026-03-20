@@ -8,6 +8,7 @@ import { Buffer } from 'node:buffer';
 import { createClient } from '@supabase/supabase-js';
 import cors from 'cors';
 import { startScheduler } from './server/cron.js';
+import { MedicationService } from './server/medication-service.js';
 import { setupVoiceRelay } from './voice-relay.js';
 import { fileURLToPath } from 'url';
 import path from 'path';
@@ -329,6 +330,105 @@ app.post('/api/schedule-event', async (req, res) => {
     }
 });
 
+// ════════════════════════════════════════════════════
+// MEDICATION API ENDPOINTS
+// ════════════════════════════════════════════════════
+const medService = supabase ? new MedicationService(supabase) : null;
+
+// GET patient medications
+app.get('/api/medications/:patientId', async (req, res) => {
+    if (!medService) return res.status(500).json({ error: 'DB not configured' });
+    try {
+        const data = await medService.getPatientMedications(req.params.patientId);
+        res.json(data);
+    } catch (err) {
+        console.error('GET medications error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// CREATE medication
+app.post('/api/medications', async (req, res) => {
+    if (!medService) return res.status(500).json({ error: 'DB not configured' });
+    const { patientId, master, instructions, regimen } = req.body;
+    if (!patientId || !master?.name) return res.status(400).json({ error: 'patientId and master.name required' });
+    try {
+        const result = await medService.createMedication(patientId, master, instructions || {}, regimen || {});
+        res.json({ success: true, ...result });
+    } catch (err) {
+        console.error('CREATE medication error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// UPDATE medication (instructions, timing, or dosage)
+app.put('/api/medications/:assignmentId', async (req, res) => {
+    if (!medService) return res.status(500).json({ error: 'DB not configured' });
+    const { changeType, instructions, regimen, effectiveDate, changeReason, changedBy } = req.body;
+    try {
+        let result;
+        if (changeType === 'instruction_change') {
+            result = await medService.updateInstructions(req.params.assignmentId, instructions, effectiveDate, changedBy);
+        } else if (changeType === 'dosage_timing_change') {
+            result = await medService.updateTimingOrDosage(req.params.assignmentId, regimen, effectiveDate, changeReason, changedBy);
+        } else if (changeType === 'discontinue') {
+            await medService.discontinueMedication(req.params.assignmentId, effectiveDate, changeReason, changedBy);
+            result = { discontinued: true };
+        } else if (changeType === 'hold') {
+            await medService.holdMedication(req.params.assignmentId, effectiveDate, changeReason, changedBy);
+            result = { held: true };
+        } else if (changeType === 'resume') {
+            await medService.resumeMedication(req.params.assignmentId, changedBy);
+            result = { resumed: true };
+        } else {
+            return res.status(400).json({ error: 'Invalid changeType' });
+        }
+        res.json({ success: true, result });
+    } catch (err) {
+        console.error('UPDATE medication error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// GET schedule events for date range
+app.get('/api/medications/:patientId/schedule', async (req, res) => {
+    if (!medService) return res.status(500).json({ error: 'DB not configured' });
+    const { start, end } = req.query;
+    if (!start || !end) return res.status(400).json({ error: 'start and end query params required' });
+    try {
+        const data = await medService.getScheduleEvents(req.params.patientId, start, end);
+        res.json(data);
+    } catch (err) {
+        console.error('GET schedule error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// LOG dose administration
+app.post('/api/medications/administration', async (req, res) => {
+    if (!medService) return res.status(500).json({ error: 'DB not configured' });
+    const { scheduleEventId, status, details } = req.body;
+    if (!scheduleEventId || !status) return res.status(400).json({ error: 'scheduleEventId and status required' });
+    try {
+        const log = await medService.logAdministration(scheduleEventId, status, details || {});
+        res.json({ success: true, log });
+    } catch (err) {
+        console.error('LOG administration error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// GET audit log
+app.get('/api/medications/:assignmentId/audit', async (req, res) => {
+    if (!medService) return res.status(500).json({ error: 'DB not configured' });
+    try {
+        const data = await medService.getAuditLog(req.params.assignmentId);
+        res.json(data);
+    } catch (err) {
+        console.error('GET audit error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
 app.post('/api/trigger-call', async (req, res) => {
     if (!twilioClient) return res.status(500).json({ error: 'Twilio not configured' });
     const { phoneNumber } = req.body;

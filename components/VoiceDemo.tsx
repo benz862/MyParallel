@@ -348,7 +348,8 @@ export const VoiceDemo: React.FC<VoiceDemoProps> = ({ lockedVoiceId, lockedPhone
                     properties: {
                        title: { type: "STRING" },
                        description: { type: "STRING" },
-                       start_time: { type: "STRING", description: "ISO 8601 formatted start time (e.g. 2026-03-20T15:00:00Z)" }
+                       start_time: { type: "STRING", description: "ISO 8601 formatted start time in the user's local timezone" },
+                       reminder_minutes: { type: "NUMBER", description: "Minutes before event to call with a reminder. Use 0 for no reminder." }
                     },
                     required: ["title", "description", "start_time"]
                  }

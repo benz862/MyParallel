@@ -60,7 +60,8 @@ export function setupVoiceRelay(server, getContextCallback, saveMessageCallback,
                       properties: {
                         title: { type: "STRING", description: "Short title of the event" },
                         description: { type: "STRING", description: "Details of the event" },
-                        start_time: { type: "STRING", description: `ISO 8601 formatted start time in the user's local timezone (${userTimezone})` }
+                        start_time: { type: "STRING", description: `ISO 8601 formatted start time in the user's local timezone (${userTimezone})` },
+                        reminder_minutes: { type: "NUMBER", description: "Minutes before the event to send a phone call reminder. Common values: 5, 15, 30, 60. Use 0 for no reminder. If the user asks for a reminder, set this." }
                       },
                       required: ["title", "description", "start_time"]
                     }
@@ -78,6 +79,7 @@ IMPORTANT: The current date and time is ${new Date().toLocaleString('en-US', { t
               
 CRITICAL RULES:
 1. You have a TOOL BLOCK installed called "schedule_calendar_event". If the user asks to schedule an appointment or check-in, YOU ABSOLUTELY MUST EMIT THIS FUNCTION CALL EXACTLY ONCE. DO NOT verbally agree without emitting the physical function block! Only call the tool ONE TIME per appointment request.
+2. If the user asks to be reminded before an appointment (e.g. "remind me 15 minutes before"), set the reminder_minutes parameter in the function call. If they don't mention a reminder, set reminder_minutes to 0.
 
 User Profile Data: \n\n${contextString}` }]
                 }
@@ -116,7 +118,7 @@ User Profile Data: \n\n${contextString}` }]
                   }
                   if (fc.id) processedCallIds.add(fc.id);
                   console.log(`[Proxy] Executing scheduleEventCallback for ${activeUserNumber}...`, fc.args);
-                  scheduleEventCallback(activeUserNumber, fc.args.title, fc.args.description, fc.args.start_time).then(success => {
+                  scheduleEventCallback(activeUserNumber, fc.args.title, fc.args.description, fc.args.start_time, fc.args.reminder_minutes || 0).then(success => {
                     console.log(`[Proxy] DB Insert Result: ${success} -> Sending toolResponse to Gemini...`);
                     const toolResponsePayload = {
                       toolResponse: {

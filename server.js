@@ -68,7 +68,7 @@ async function getHistory(userNumber, limit = 10) {
     return data ? data.reverse().map(m => ({ role: m.sender === 'user' ? 'user' : 'model', parts: [{ text: m.content || (m.media_url ? '[Image]' : '') }] })) : [];
 }
 
-async function scheduleCalendarEvent(userNumber, title, description, startTime) {
+async function scheduleCalendarEvent(userNumber, title, description, startTime, reminderMinutes = 0) {
     if (!supabase || !userNumber) return false;
     try {
         const { data: profile } = await supabase.from('user_profiles').select('id, full_name, caregiver_name').eq('phone_number', userNumber).single();
@@ -83,7 +83,8 @@ async function scheduleCalendarEvent(userNumber, title, description, startTime) 
             title: title || 'AI Scheduled Check-in',
             description: description || 'Scheduled via Voice Assistant',
             start_time: start.toISOString(),
-            end_time: end.toISOString()
+            end_time: end.toISOString(),
+            reminder_minutes: reminderMinutes || 0
         });
         if (error) throw error;
         

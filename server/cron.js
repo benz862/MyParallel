@@ -73,10 +73,16 @@ export function startScheduler() {
            // Determine if the current minute matches the event's start_time in the user's timezone
            const eventTimeStr = new Date(event.start_time).toLocaleTimeString('en-US', { timeZone: timezone, hour12: false, hour: '2-digit', minute: '2-digit' });
            const currentTimeStr = now.toLocaleTimeString('en-US', { timeZone: timezone, hour12: false, hour: '2-digit', minute: '2-digit' });
-           const oneHourFromNow = new Date(now.getTime() + 60 * 60 * 1000);
-           const oneHourTimeStr = oneHourFromNow.toLocaleTimeString('en-US', { timeZone: timezone, hour12: false, hour: '2-digit', minute: '2-digit' });
+           
+           // Calculate the dynamic reminder time based on the event's reminder_minutes setting
+           const reminderMinutes = event.reminder_minutes || 0;
+           let reminderTimeStr = null;
+           if (reminderMinutes > 0) {
+               const reminderTime = new Date(new Date(event.start_time).getTime() - reminderMinutes * 60 * 1000);
+               reminderTimeStr = reminderTime.toLocaleTimeString('en-US', { timeZone: timezone, hour12: false, hour: '2-digit', minute: '2-digit' });
+           }
 
-           if (eventTimeStr !== currentTimeStr && eventTimeStr !== oneHourTimeStr) continue;
+           if (eventTimeStr !== currentTimeStr && reminderTimeStr !== currentTimeStr) continue;
 
            // If times match, check recurrent constraints based on date logic
            const userCurrentDate = new Date(now.toLocaleString("en-US", { timeZone: timezone }));
@@ -113,15 +119,11 @@ export function startScheduler() {
            
            if (shouldTrigger) {
                if (eventTimeStr === currentTimeStr) {
-                   console.log(`[Cron] Triggering Voice Call for Recurring/Active Event: ${event.title} to ${userNumber}`);
+                   console.log(`[Cron] Triggering Voice Call for Event: ${event.title} to ${userNumber}`);
                    await triggerOutboundVoiceCall(userNumber, `Calendar Event: ${event.title}`);
-               } else if (eventTimeStr === oneHourTimeStr) {
-                   console.log(`[Cron] Triggering 1-Hour SMS Reminder for: ${event.title} to ${userNumber}`);
-                   const msg = `Reminder: Your appointment "${event.title || 'Check-in'}" is in 1 hour.`;
-                   await saveMessage(userNumber, 'system', `[System] Appointment Reminder Sent: ${msg}`, 'system');
-                   if (twilioClient) {
-                       await twilioClient.messages.create({ from: process.env.TWILIO_PHONE_NUMBER, to: userNumber, body: msg }).catch(e => console.error("Twilio Cron SMS fail:", e));
-                   }
+               } else if (reminderTimeStr === currentTimeStr) {
+                   console.log(`[Cron] Triggering ${reminderMinutes}-min Reminder CALL for: ${event.title} to ${userNumber}`);
+                   await triggerOutboundVoiceCall(userNumber, `Friendly Reminder: Your appointment "${event.title}" is in ${reminderMinutes} minutes.`);
                }
            }
         }

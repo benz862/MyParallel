@@ -2,7 +2,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import alawmulaw from "alawmulaw";
 import { Buffer } from "node:buffer";
 
-const GEMINI_WS_URL = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent";
+const GEMINI_WS_URL = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent";
 
 export function setupVoiceRelay(server, getContextCallback, saveMessageCallback, scheduleEventCallback) {
   const wss = new WebSocketServer({ server, path: '/api/twilio/media' });

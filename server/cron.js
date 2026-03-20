@@ -184,11 +184,14 @@ export function startScheduler() {
 }
 
 async function triggerOutboundVoiceCall(userNumber, logReason) {
-  let webhookUrl = process.env.NGROK_URL ? `${process.env.NGROK_URL}/api/twilio/voice` : null;
-  if (!webhookUrl) {
-      console.error("[Cron] CRITICAL ERROR: process.env.NGROK_URL is undefined. You MUST define NGROK_URL in your .env file to trigger outbound Twilio Voice Calls.");
+  // Render provides RENDER_EXTERNAL_URL automatically (e.g. https://myparallel.onrender.com)
+  // NGROK_URL is only for local development
+  const baseUrl = process.env.RENDER_EXTERNAL_URL || process.env.NGROK_URL;
+  if (!baseUrl) {
+      console.error("[Cron] CRITICAL: Neither RENDER_EXTERNAL_URL nor NGROK_URL is set. Cannot trigger outbound calls.");
       return;
   }
+  const webhookUrl = `${baseUrl}/api/twilio/voice`;
 
   try {
     const call = await twilioClient.calls.create({

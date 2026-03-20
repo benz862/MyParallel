@@ -63,6 +63,7 @@ const CaregiverCalendar: React.FC<CaregiverCalendarProps> = ({ patientId, themeC
 
     // Supabase Realtime subscription for instant updates
     let subscription: any = null;
+    let medSubscription: any = null;
     if (patientId) {
       subscription = supabase
         .channel(`calendar-${patientId}`)
@@ -76,13 +77,28 @@ const CaregiverCalendar: React.FC<CaregiverCalendarProps> = ({ patientId, themeC
           fetchEvents();
         })
         .subscribe();
+
+      // Auto-refresh when medication schedule events change
+      medSubscription = supabase
+        .channel(`med-schedule-${patientId}`)
+        .on('postgres_changes', {
+          event: '*',
+          schema: 'public',
+          table: 'medication_schedule_events',
+          filter: `patient_id=eq.${patientId}`
+        }, () => {
+          console.log('[Calendar] Medication schedule change detected, refreshing...');
+          fetchEvents();
+        })
+        .subscribe();
     }
 
     return () => {
       clearInterval(interval);
       if (subscription) supabase.removeChannel(subscription);
+      if (medSubscription) supabase.removeChannel(medSubscription);
     };
-  }, [patientId]);
+  }, [patientId, currentMonth]);
 
   const fetchEvents = async () => {
     if (!patientId) {

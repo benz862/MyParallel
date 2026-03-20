@@ -42,6 +42,33 @@ const CaregiverCalendar: React.FC<CaregiverCalendarProps> = ({ patientId, themeC
   
   useEffect(() => {
     fetchEvents();
+
+    // Auto-refresh every 30 seconds as a fallback
+    const interval = setInterval(() => {
+      if (patientId) fetchEvents();
+    }, 30000);
+
+    // Supabase Realtime subscription for instant updates
+    let subscription: any = null;
+    if (patientId) {
+      subscription = supabase
+        .channel(`calendar-${patientId}`)
+        .on('postgres_changes', {
+          event: '*',
+          schema: 'public',
+          table: 'calendar_events',
+          filter: `user_id=eq.${patientId}`
+        }, () => {
+          console.log('[Calendar] Realtime event detected, refreshing...');
+          fetchEvents();
+        })
+        .subscribe();
+    }
+
+    return () => {
+      clearInterval(interval);
+      if (subscription) supabase.removeChannel(subscription);
+    };
   }, [patientId]);
 
   const fetchEvents = async () => {

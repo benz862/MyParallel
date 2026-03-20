@@ -8,6 +8,7 @@ import MedicationAdherenceWidget from './MedicationAdherenceWidget';
 import DailyCareBoard from './DailyCareBoard';
 import VitalsTracker from './VitalsTracker';
 import FamilyManager from './FamilyManager';
+import IncidentLogger from './IncidentLogger';
 import BulkPatientUploader from './BulkPatientUploader';
 import UserIntakeForm from './UserIntakeForm';
 
@@ -45,7 +46,7 @@ const WebTerminal: React.FC = () => {
   const [patients, setPatients] = useState<any[]>([]);
   const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
   const [upcomingEvents, setUpcomingEvents] = useState<any[]>([]);
-  const [activeRightTab, setActiveRightTab] = useState<'schedule' | 'medications' | 'care' | 'vitals' | 'family'>('schedule');
+  const [activeRightTab, setActiveRightTab] = useState<'schedule' | 'medications' | 'care' | 'vitals' | 'incidents' | 'family'>('schedule');
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const UPLINK_URL = import.meta.env.DEV ? 'http://localhost:8081' : '';
@@ -365,6 +366,7 @@ const WebTerminal: React.FC = () => {
                   <button onClick={() => setActiveRightTab('medications')} className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors ${activeRightTab === 'medications' ? 'bg-wellness-blue text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>💊 Meds</button>
                   <button onClick={() => setActiveRightTab('care')} className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors ${activeRightTab === 'care' ? 'bg-wellness-blue text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>📋 Care</button>
                   <button onClick={() => setActiveRightTab('vitals')} className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors ${activeRightTab === 'vitals' ? 'bg-wellness-blue text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>🩺 Vitals</button>
+                  <button onClick={() => setActiveRightTab('incidents')} className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors ${activeRightTab === 'incidents' ? 'bg-wellness-blue text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>🚨 Incidents</button>
                   <button onClick={() => setActiveRightTab('family')} className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors ${activeRightTab === 'family' ? 'bg-wellness-blue text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>👨‍👩‍👧 Family</button>
                 </div>
                 {selectedPatientId ? (
@@ -385,6 +387,8 @@ const WebTerminal: React.FC = () => {
                   <VitalsTracker patientId={selectedPatientId} />
                 ) : activeRightTab === 'family' && selectedPatientId ? (
                   <FamilyManager patientId={selectedPatientId} />
+                ) : activeRightTab === 'incidents' && selectedPatientId ? (
+                  <IncidentLogger patientId={selectedPatientId} />
                 ) : selectedPatientId ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                     <MedicationAdherenceWidget patientId={selectedPatientId} />

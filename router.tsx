@@ -16,6 +16,7 @@ import PrivacyPolicy from './components/PrivacyPolicy';
 import TermsOfService from './components/TermsOfService';
 import CaregiverProfileModal from './components/CaregiverProfileModal';
 import PatientPortal from './components/PatientPortal';
+import FamilyDashboard from './components/FamilyDashboard';
 import AdminPortal from './components/AdminPortal';
 import { supabase } from './utils/supabase';
 
@@ -196,6 +197,9 @@ const AppRouter: React.FC = () => {
           
           {/* Patient PWA Formally Isolated Route */}
           <Route path="/patient" element={<PatientPortal />} />
+
+          {/* Family Dashboard — public, accessed via invite code */}
+          <Route path="/family" element={<FamilyDashboard />} />
 
           {/* Protected Routes */}
           <Route

@@ -277,6 +277,7 @@ async function getUserProfileContext(phoneNumber) {
         } catch(err) { console.error('Failed fetching incidents', err); }
 
         const caregiverName = profile.caregiver_name || 'Not specified';
+        const caregiverPhone = profile.caregiver_phone || 'Not available';
 
         return {
           voiceId: profile.voice_id || 'Puck',
@@ -291,6 +292,7 @@ USER PROFILE CONTEXT:
 - Age: ${profile.age || 'Unknown'}
 - Health Conditions: ${(profile.conditions || []).join(', ') || 'None specified'}
 - Caregiver: ${caregiverName}${caregiverName !== 'Not specified' ? ` (IMPORTANT: Always refer to the caregiver as "${caregiverName}" by name when discussing care instructions or relaying information.)` : ''}
+- Caregiver Phone: ${caregiverPhone}${caregiverPhone !== 'Not available' ? ' (If the patient asks for their caregiver\'s phone number, provide this number.)' : ''}
 - Automated Check-in Schedule: ${formattedSchedule}
 - Interface Preference: ${profile.selected_personality || 'Warm and supportive'}
 

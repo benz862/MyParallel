@@ -212,7 +212,7 @@ export const VoiceDemo: React.FC<VoiceDemoProps> = ({ lockedVoiceId, lockedPhone
               
               // Detect if user is speaking (simple amplitude check to interrupt AI)
               const amplitude = Array.from(inputData).reduce<number>((sum, val) => sum + Math.abs(val as number), 0) / inputData.length;
-              if (amplitude > 0.02) {  // User is speaking - interrupt AI
+              if (amplitude > 0.04) {  // User is speaking - interrupt AI
                 // Stop all playing audio sources (interrupt the AI)
                 sourcesRef.current.forEach(source => {
                   try { source.stop(); } catch(e) {}
@@ -244,15 +244,27 @@ export const VoiceDemo: React.FC<VoiceDemoProps> = ({ lockedVoiceId, lockedPhone
                              headers: { 'Content-Type': 'application/json' },
                              body: JSON.stringify({ userNumber: targetPhone || null, user_id: patientId || null, ...fc.args })
                          }).then(res => res.json()).then(result => {
-                             activeSessionRef.current?.send({
+                             console.log('[VA] Sending toolResponse back to Gemini for fc.id:', fc.id);
+                             try {
+                               activeSessionRef.current?.sendToolResponse({
+                                 functionResponses: [{
+                                   id: fc.id,
+                                   name: "schedule_calendar_event",
+                                   response: { result: { success: result.success ? "Successfully scheduled" : "Database error" } }
+                                 }]
+                               });
+                             } catch (toolErr) {
+                               console.error('[VA] sendToolResponse failed, trying raw send:', toolErr);
+                               activeSessionRef.current?.send({
                                  toolResponse: {
-                                     functionResponses: [{
-                                         id: fc.id,
-                                         name: "schedule_calendar_event",
-                                         response: { result: { success: result.success ? "Successfully scheduled" : "Database error" } }
-                                     }]
+                                   functionResponses: [{
+                                     id: fc.id,
+                                     name: "schedule_calendar_event",
+                                     response: { result: { success: result.success ? "Successfully scheduled" : "Database error" } }
+                                   }]
                                  }
-                             } as any);
+                               } as any);
+                             }
                          }).catch(e => console.error("Schedule API error:", e));
                      }
                  }
@@ -287,7 +299,10 @@ export const VoiceDemo: React.FC<VoiceDemoProps> = ({ lockedVoiceId, lockedPhone
                 aiTranscriptBufferRef.current = '';
             }
 
-            const base64Audio = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
+            // Process ALL parts for audio (not just parts[0])
+            const audioParts = (message.serverContent?.modelTurn?.parts || []).filter((p: any) => p.inlineData?.data);
+            for (const audioPart of audioParts) {
+            const base64Audio = audioPart.inlineData.data;
             if (base64Audio) {
                setIsTalking(true);
                
@@ -318,6 +333,7 @@ export const VoiceDemo: React.FC<VoiceDemoProps> = ({ lockedVoiceId, lockedPhone
                nextStartTimeRef.current += audioBuffer.duration;
                sourcesRef.current.add(source);
             }
+            } // end for audioParts
           },
           onclose: () => {
              console.log("Gemini Live Closed");

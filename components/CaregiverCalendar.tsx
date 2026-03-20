@@ -262,7 +262,7 @@ const CaregiverCalendar: React.FC<CaregiverCalendarProps> = ({ patientId, themeC
             
             // Dynamically style based on the Patient's distinct semantic color overlay
             let borderClass = !isSameMonth(day, currentMonth) ? 'border-transparent opacity-50 bg-slate-50' : 'border-slate-100 bg-white hover:border-slate-300';
-            let customSelector = isSelected ? `ring-2 ring-offset-1 ${themeColor ? themeColor.border.replace('border-', 'ring-') : 'ring-wellness-blue'}` : '';
+            let customSelector = isSelected ? `border-2 ${themeColor ? themeColor.border : 'border-wellness-blue'} z-10 relative shadow-sm` : '';
 
             return (
               <div 

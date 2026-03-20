@@ -162,6 +162,32 @@ async function getUserProfileContext(phoneNumber) {
             }
         } catch(err) { console.error('Failed fetching calendar context', err); }
 
+        // Fetch medications from the new structured tables
+        let medicationContext = "None specified";
+        try {
+            const { data: medAssignments } = await supabase
+                .from('patient_medication_assignments')
+                .select('*, medications_master(*), patient_medication_versions(*)')
+                .eq('patient_id', profile.id)
+                .in('status', ['active', 'on_hold']);
+            
+            if (medAssignments && medAssignments.length > 0) {
+                medicationContext = medAssignments.map(a => {
+                    const m = a.medications_master || {};
+                    const v = (a.patient_medication_versions || []).find(ver => ver.is_active) || a.patient_medication_versions?.[0];
+                    const strength = `${m.dosage_strength || ''} ${m.strength_unit || ''}`.trim();
+                    const freq = v?.frequency_type?.replace(/_/g, ' ') || '';
+                    const route = v?.route || '';
+                    const times = (v?.specific_times || []).join(', ');
+                    const instructions = v?.snapshot_instruction_summary || '';
+                    const status = a.status === 'on_hold' ? ' [ON HOLD]' : '';
+                    return `- ${m.name || 'Unknown'}${strength ? ' ' + strength : ''}${status}: ${freq}${route ? ' (' + route + ')' : ''}${times ? ' at ' + times : ''}${instructions ? ' | Instructions: ' + instructions : ''}`;
+                }).join('\n');
+            }
+        } catch(err) { console.error('Failed fetching medication context', err); }
+
+        const caregiverName = profile.caregiver_name || 'Not specified';
+
         return {
           voiceId: profile.voice_id || 'Puck',
           emotionalTrait: profile.emotional_trait || 'Empathetic and warm',
@@ -174,10 +200,12 @@ USER PROFILE CONTEXT:
 - Name: ${profile.preferred_name || profile.full_name || 'Unknown'}
 - Age: ${profile.age || 'Unknown'}
 - Health Conditions: ${(profile.conditions || []).join(', ') || 'None specified'}
-- Current Medications: ${(profile.medications || []).join(', ') || 'None specified'}
-- Caregiver: ${profile.caregiver_name || 'Not specified'}
+- Caregiver: ${caregiverName}${caregiverName !== 'Not specified' ? ` (IMPORTANT: Always refer to the caregiver as "${caregiverName}" by name when discussing care instructions or relaying information.)` : ''}
 - Automated Check-in Schedule: ${formattedSchedule}
 - Interface Preference: ${profile.selected_personality || 'Warm and supportive'}
+
+CURRENT MEDICATIONS:
+${medicationContext}
 
 UPCOMING / RECENT CAREGIVER CALENDAR APPOINTMENTS:
 ${calendarContext}

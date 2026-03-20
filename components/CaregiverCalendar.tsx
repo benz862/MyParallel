@@ -24,6 +24,7 @@ interface CaregiverCalendarProps {
 // Timezone-safe date comparison: extracts YYYY-MM-DD from any date string or Date object
 const toLocalDateStr = (d: Date | string): string => {
   const date = typeof d === 'string' ? new Date(d) : d;
+  if (isNaN(date.getTime())) return '0000-00-00';
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 };
 
@@ -332,7 +333,7 @@ const CaregiverCalendar: React.FC<CaregiverCalendarProps> = ({ patientId, themeC
                 {selectedDateEvents.map(event => (
                    <div key={event.id} className="bg-white p-4 border border-slate-200 rounded-xl flex items-start gap-4">
                       <div className="bg-sky-50 text-wellness-blue font-bold px-3 py-2 rounded border border-sky-100 text-sm">
-                          {format(new Date(event.start_time + (event.start_time.endsWith("Z") ? "" : "Z")), 'h:mm a')}
+                           {(() => { try { return format(new Date(event.start_time), 'h:mm a'); } catch { return 'N/A'; } })()}
                       </div>
                       <div className="flex-1">
                           <h4 className="font-bold text-slate-800 flex items-center gap-2">

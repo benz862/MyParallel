@@ -75,7 +75,7 @@ const MedicationManager: React.FC<MedicationManagerProps> = ({ patientId }) => {
   const [instructions, setInstructions] = useState<any>(emptyInstructions());
 
   const [regimen, setRegimen] = useState({
-    assigned_dose_amount: '', assigned_dose_unit: 'mg', route: 'oral',
+    route: 'oral',
     frequency_type: 'once_daily', specific_times: ['08:00'],
     effective_start_at: new Date().toISOString().split('T')[0],
   });
@@ -99,7 +99,7 @@ const MedicationManager: React.FC<MedicationManagerProps> = ({ patientId }) => {
   const resetForm = () => {
     setMaster({ name: '', generic_name: '', brand_name: '', dosage_strength: '', strength_unit: 'mg', form: 'tablet', purpose: '', prescriber_name: '', pharmacy_name: '', is_prn: false, is_controlled: false });
     setInstructions(emptyInstructions());
-    setRegimen({ assigned_dose_amount: '', assigned_dose_unit: 'mg', route: 'oral', frequency_type: 'once_daily', specific_times: ['08:00'], effective_start_at: new Date().toISOString().split('T')[0] });
+    setRegimen({ route: 'oral', frequency_type: 'once_daily', specific_times: ['08:00'], effective_start_at: new Date().toISOString().split('T')[0] });
     setEditingId(null);
   };
 
@@ -110,7 +110,7 @@ const MedicationManager: React.FC<MedicationManagerProps> = ({ patientId }) => {
       const res = await fetch(`${UPLINK_URL}/api/medications`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ patientId, master: { ...master, dosage_strength: master.dosage_strength || null }, instructions, regimen: { ...regimen, assigned_dose_amount: Number(regimen.assigned_dose_amount) || null, effective_start_at: new Date(regimen.effective_start_at).toISOString() } }),
+        body: JSON.stringify({ patientId, master: { ...master, dosage_strength: master.dosage_strength || null }, instructions, regimen: { ...regimen, assigned_dose_amount: master.dosage_strength || null, assigned_dose_unit: master.strength_unit, effective_start_at: new Date(regimen.effective_start_at).toISOString() } }),
       });
       const data = await res.json();
       if (data.success) {
@@ -133,7 +133,7 @@ const MedicationManager: React.FC<MedicationManagerProps> = ({ patientId }) => {
     try {
       const body: any = { changeType, effectiveDate: effectiveDate ? new Date(effectiveDate).toISOString() : new Date().toISOString(), changeReason };
       if (changeType === 'instruction_change') body.instructions = instructions;
-      else if (changeType === 'dosage_timing_change') body.regimen = { ...regimen, assigned_dose_amount: Number(regimen.assigned_dose_amount) || null };
+      else if (changeType === 'dosage_timing_change') body.regimen = { ...regimen, assigned_dose_amount: master.dosage_strength || null, assigned_dose_unit: master.strength_unit };
 
       const res = await fetch(`${UPLINK_URL}/api/medications/${editingId}`, {
         method: 'PUT',
@@ -167,7 +167,7 @@ const MedicationManager: React.FC<MedicationManagerProps> = ({ patientId }) => {
     const v = (med.patient_medication_versions || []).find((ver: any) => ver.is_active) || med.patient_medication_versions?.[0];
     setMaster({ name: m.name, generic_name: m.generic_name || '', brand_name: m.brand_name || '', dosage_strength: String(m.dosage_strength || ''), strength_unit: m.strength_unit || 'mg', form: m.form || 'tablet', purpose: m.purpose || '', prescriber_name: m.prescriber_name || '', pharmacy_name: m.pharmacy_name || '', is_prn: m.is_prn, is_controlled: m.is_controlled });
     if (v?.snapshot_instruction_profile) setInstructions({ ...emptyInstructions(), ...v.snapshot_instruction_profile });
-    if (v) setRegimen({ assigned_dose_amount: String(v.assigned_dose_amount || ''), assigned_dose_unit: v.assigned_dose_unit || 'mg', route: v.route || 'oral', frequency_type: v.frequency_type || 'once_daily', specific_times: v.specific_times || ['08:00'], effective_start_at: new Date().toISOString().split('T')[0] });
+    if (v) setRegimen({ route: v.route || 'oral', frequency_type: v.frequency_type || 'once_daily', specific_times: v.specific_times || ['08:00'], effective_start_at: new Date().toISOString().split('T')[0] });
     setEditingId(med.id);
     setShowForm(true);
   };
@@ -383,15 +383,6 @@ const MedicationManager: React.FC<MedicationManagerProps> = ({ patientId }) => {
               <div>
                 <h4 className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-4">Dosage & Schedule</h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-semibold text-slate-700 mb-1">Dose Amount</label>
-                    <div className="flex gap-2">
-                      <input type="number" value={regimen.assigned_dose_amount} onChange={e => setRegimen(p => ({ ...p, assigned_dose_amount: e.target.value }))} className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm" placeholder="1" />
-                      <select value={regimen.assigned_dose_unit} onChange={e => setRegimen(p => ({ ...p, assigned_dose_unit: e.target.value }))} className="px-3 py-2.5 border border-slate-300 rounded-xl text-sm bg-white">
-                        {['mg', 'mcg', 'g', 'mL', 'units', 'tablets', 'capsules', 'puffs', 'drops'].map(u => <option key={u} value={u}>{u}</option>)}
-                      </select>
-                    </div>
-                  </div>
                   <div>
                     <label className="block text-sm font-semibold text-slate-700 mb-1">Route</label>
                     <select value={regimen.route} onChange={e => setRegimen(p => ({ ...p, route: e.target.value }))} className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm bg-white">

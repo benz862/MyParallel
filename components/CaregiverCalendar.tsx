@@ -21,6 +21,12 @@ interface CaregiverCalendarProps {
   themeColor?: { border: string, lightBg: string, activeBg: string, text: string };
 }
 
+// Timezone-safe date comparison: extracts YYYY-MM-DD from any date string or Date object
+const toLocalDateStr = (d: Date | string): string => {
+  const date = typeof d === 'string' ? new Date(d) : d;
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+};
+
 const CaregiverCalendar: React.FC<CaregiverCalendarProps> = ({ patientId, themeColor }) => {
   const { user } = useAuth();
   const [events, setEvents] = useState<CalendarEvent[]>([]);
@@ -155,7 +161,8 @@ const CaregiverCalendar: React.FC<CaregiverCalendarProps> = ({ patientId, themeC
   const endDate = endOfWeek(monthEnd);
   const calendarDays = eachDayOfInterval({ start: startDate, end: endDate });
 
-  const selectedDateEvents = events.filter(e => isSameDay(new Date(e.start_time + (e.start_time.endsWith("Z") ? "" : "Z")), selectedDate));
+  const selectedDateStr = toLocalDateStr(selectedDate);
+  const selectedDateEvents = events.filter(e => toLocalDateStr(e.start_time) === selectedDateStr);
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col h-full w-full">
@@ -188,21 +195,20 @@ const CaregiverCalendar: React.FC<CaregiverCalendarProps> = ({ patientId, themeC
             const isSelected = isSameDay(day, selectedDate);
             
             // Restore native temporal intersection observer
+            const dayStr = toLocalDateStr(day);
             const dayEvents = events.filter(e => {
-                const eventStart = new Date(e.start_time + (e.start_time.endsWith("Z") ? "" : "Z"));
-                const dayEnd = new Date(day);
-                dayEnd.setHours(23, 59, 59);
-                if (dayEnd < eventStart) return false;
-                if (e.repeat_end_date && day > new Date(e.repeat_end_date + (e.repeat_end_date.endsWith("Z") ? "" : "Z"))) return false;
+                const eventStart = new Date(e.start_time);
+                const eventDateStr = toLocalDateStr(eventStart);
+                if (e.repeat_end_date && day > new Date(e.repeat_end_date)) return false;
 
                 if (e.repeat_type === 'none') {
-                    return isSameDay(eventStart, day);
+                    return eventDateStr === dayStr;
                 } else if (e.repeat_type === 'daily') {
-                    const diff = differenceInDays(new Date(day.setHours(0,0,0,0)), new Date(new Date(eventStart).setHours(0,0,0,0)));
+                    const diff = differenceInDays(new Date(day.getFullYear(), day.getMonth(), day.getDate()), new Date(eventStart.getFullYear(), eventStart.getMonth(), eventStart.getDate()));
                     return diff >= 0 && (diff % (e.repeat_interval || 1)) === 0;
                 } else if (e.repeat_type === 'weekly') {
                     const daysArr = Array.isArray(e.repeat_days) ? e.repeat_days : (typeof e.repeat_days === 'string' ? JSON.parse(e.repeat_days) : []);
-                    const diffWeeks = differenceInWeeks(new Date(day.setHours(0,0,0,0)), new Date(new Date(eventStart).setHours(0,0,0,0)));
+                    const diffWeeks = differenceInWeeks(new Date(day.getFullYear(), day.getMonth(), day.getDate()), new Date(eventStart.getFullYear(), eventStart.getMonth(), eventStart.getDate()));
                     const weekMatches = diffWeeks >= 0 && (diffWeeks % (e.repeat_interval || 1)) === 0;
                     const dayName = format(day, 'EEE');
                     const dayMatches = daysArr.length > 0 ? daysArr.includes(dayName) : eventStart.getDay() === day.getDay();

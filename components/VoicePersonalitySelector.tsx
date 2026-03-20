@@ -1,122 +1,23 @@
 import React, { useState, useEffect } from "react";
-import { api } from "../utils/api";
 import { GoogleGenAI, LiveServerMessage } from '@google/genai';
+import { VOICE_PRESETS } from '../constants';
 
-// Voice Options
-export const VOICES = [
-  {
-    id: "calm_female",
-    name: "Calm Female",
-    description: "Warm, steady, reassuring tone.",
-    sampleText: "Hi there, I'll be here whenever you need me.",
-    geminiVoiceId: "Kore", // Gemini voice ID
-  },
-  {
-    id: "friendly_male",
-    name: "Friendly Male",
-    description: "Upbeat, positive, approachable.",
-    sampleText: "Hey! You're doing great. Let's tackle today together.",
-    geminiVoiceId: "Fenrir",
-  },
-  {
-    id: "gentle_elder",
-    name: "Gentle Elder",
-    description: "Soft, wise, comforting — great for seniors.",
-    sampleText: "It's okay to take things one step at a time.",
-    geminiVoiceId: "Kore",
-  },
-  {
-    id: "energetic_youth",
-    name: "Energetic Youth",
-    description: "Bright, enthusiastic, supportive.",
-    sampleText: "Let's go! I believe in you!",
-    geminiVoiceId: "Puck",
-  },
-  {
-    id: "neutral_guide",
-    name: "Neutral Guide",
-    description: "Professional, balanced, emotion-neutral.",
-    sampleText: "I'm here to assist you whenever you're ready.",
-    geminiVoiceId: "Zephyr",
-  },
-  {
-    id: "soft_whisper",
-    name: "Soft Whisper",
-    description: "Quiet, soothing, great for anxiety relief.",
-    sampleText: "Take a breath. You're safe, and you're not alone.",
-    geminiVoiceId: "Kore",
-  },
-];
-
-// Personality Options
-export const PERSONALITIES = [
-  {
-    id: "supportive",
-    name: "Supportive Companion",
-    description: "Encouraging, uplifting, gentle affirmation.",
-    icon: "💙",
-    style: {
-      warmth: 9,
-      humor: 3,
-      directness: 4,
-    },
-  },
-  {
-    id: "calm_therapist",
-    name: "Calm Therapist",
-    description: "Steady, grounding, soothing, emotionally regulated.",
-    icon: "🧘",
-    style: {
-      warmth: 8,
-      humor: 1,
-      directness: 6,
-    },
-  },
-  {
-    id: "practical_coach",
-    name: "Practical Coach",
-    description: "Action-oriented, structured, helpful guidance.",
-    icon: "📋",
-    style: {
-      warmth: 5,
-      humor: 2,
-      directness: 9,
-    },
-  },
-  {
-    id: "friendly_neighbor",
-    name: "Friendly Neighbor",
-    description: "Casual, chatty, friendly tone.",
-    icon: "👋",
-    style: {
-      warmth: 7,
-      humor: 5,
-      directness: 3,
-    },
-  },
-  {
-    id: "elder_wisdom",
-    name: "Elder Wisdom",
-    description: "Slow, comforting, kind, grandfather/grandmother energy.",
-    icon: "🌳",
-    style: {
-      warmth: 9,
-      humor: 2,
-      directness: 4,
-    },
-  },
-  {
-    id: "neutral_assistant",
-    name: "Neutral Assistant",
-    description: "Calm, professional, balanced tone.",
-    icon: "🤝",
-    style: {
-      warmth: 4,
-      humor: 0,
-      directness: 7,
-    },
-  },
-];
+// Unified persona list — each entry maps to a Gemini voice + personality
+const PERSONAS = VOICE_PRESETS.map(v => ({
+  geminiVoiceId: v.id,
+  label: v.label,
+  description: v.desc,
+  sampleText: v.systemInstruction,  // Use system instruction as preview context
+  previewLine: (() => {
+    switch (v.label) {
+      case 'The Nurturer': return "Hi there, I'll be here whenever you need me.";
+      case 'The Anchor': return "Take your time. I'm right here with you.";
+      case 'The Optimist': return "Hey! You're doing great. Let's tackle today together!";
+      case 'The Guide': return "I'm here to help keep things organized for you.";
+      default: return "Hello, I'm MyParallel.";
+    }
+  })()
+}));
 
 function decode(base64: string) {
   const binaryString = atob(base64);
@@ -128,7 +29,6 @@ function decode(base64: string) {
   return bytes;
 }
 
-// Play voice sample function using High-Quality Native Gemini Live WebSocket Stream
 async function playVoiceSample(voiceId: string, text: string): Promise<void> {
   return new Promise(async (resolve, reject) => {
     try {
@@ -153,7 +53,6 @@ async function playVoiceSample(voiceId: string, text: string): Promise<void> {
                         if (outputCtx.state === 'running') {
                             nextStartTime = Math.max(nextStartTime, outputCtx.currentTime);
                         }
-                        
                         const pcmData = decode(base64Audio);
                         const dataInt16 = new Int16Array(pcmData.buffer);
                         const frameCount = dataInt16.length;
@@ -162,11 +61,9 @@ async function playVoiceSample(voiceId: string, text: string): Promise<void> {
                         for (let i = 0; i < frameCount; i++) {
                             channelData[i] = dataInt16[i] / 32768.0;
                         }
-
                         const source = outputCtx.createBufferSource();
                         source.buffer = buffer;
                         source.connect(outputCtx.destination);
-                        
                         activeSources++;
                         source.addEventListener('ended', () => {
                             activeSources--;
@@ -176,7 +73,6 @@ async function playVoiceSample(voiceId: string, text: string): Promise<void> {
                                 resolve();
                             }
                         });
-
                         source.start(nextStartTime);
                         nextStartTime += buffer.duration;
                     }
@@ -185,7 +81,6 @@ async function playVoiceSample(voiceId: string, text: string): Promise<void> {
             }
         });
 
-        // Trigger the voice by sending the exact text to be spoken
         await (session as any).send({
             clientContent: {
                 turns: [{ role: 'user', parts: [{ text: `Say exactly this sentence and nothing else: "${text}"` }] }]
@@ -216,240 +111,141 @@ const VoicePersonalitySelector: React.FC<VoicePersonalitySelectorProps> = ({
   initialPersonality,
   isSaving = false,
 }) => {
-  const [selectedVoice, setSelectedVoice] = useState<string | null>(initialVoice || null);
-  const [selectedPersonality, setSelectedPersonality] = useState<string | null>(initialPersonality || null);
-  const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null);
+  const [selectedPersona, setSelectedPersona] = useState<string | null>(null);
+  const [playingId, setPlayingId] = useState<string | null>(null);
 
-  // Load saved selections from localStorage on mount (if not provided as props)
+  // Initialize from saved values
   useEffect(() => {
+    if (initialVoice) {
+      // Match by Gemini voice ID
+      const match = PERSONAS.find(p => p.geminiVoiceId === initialVoice);
+      if (match) setSelectedPersona(match.geminiVoiceId);
+    }
     if (!initialVoice) {
-      const savedVoice = localStorage.getItem("parallel_voice");
-      if (savedVoice) setSelectedVoice(savedVoice);
+      const saved = localStorage.getItem("parallel_voice");
+      if (saved) {
+        const match = PERSONAS.find(p => p.geminiVoiceId === saved);
+        if (match) setSelectedPersona(match.geminiVoiceId);
+      }
     }
-    if (!initialPersonality) {
-      const savedPersonality = localStorage.getItem("parallel_personality");
-      if (savedPersonality) setSelectedPersonality(savedPersonality);
-    }
-  }, [initialVoice, initialPersonality]);
+  }, [initialVoice]);
 
-  const handleVoiceClick = async (voice: typeof VOICES[0]) => {
-    setSelectedVoice(voice.id);
-    setPlayingVoiceId(voice.id);
-    
+  const handlePreview = async (persona: typeof PERSONAS[0], e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (playingId) return;
+    setPlayingId(persona.geminiVoiceId);
     try {
-      await playVoiceSample(voice.geminiVoiceId, voice.sampleText);
+      await playVoiceSample(persona.geminiVoiceId, persona.previewLine);
     } finally {
-      setPlayingVoiceId(null);
+      setPlayingId(null);
     }
-  };
-
-  const handlePersonalityClick = (personalityId: string) => {
-    setSelectedPersonality(personalityId);
   };
 
   const handleSave = async () => {
-    if (!selectedVoice || !selectedPersonality) return;
+    if (!selectedPersona) return;
+    const persona = PERSONAS.find(p => p.geminiVoiceId === selectedPersona);
+    if (!persona) return;
 
-    localStorage.setItem("parallel_voice", selectedVoice);
-    localStorage.setItem("parallel_personality", selectedPersonality);
+    localStorage.setItem("parallel_voice", persona.geminiVoiceId);
+    localStorage.setItem("parallel_personality", persona.label);
     
-    // If onSave callback is provided (for onboarding), use it
     if (onSave) {
-      await onSave(selectedVoice, selectedPersonality);
+      await onSave(persona.geminiVoiceId, persona.label);
     } else {
       alert("Your companion setup is complete!");
-      
-      if (onComplete) {
-        onComplete();
-      }
+      if (onComplete) onComplete();
     }
   };
 
-  const canSave = selectedVoice !== null && selectedPersonality !== null;
-
   return (
     <section className="py-16 sm:py-24 bg-wellness-cream border-t border-slate-200">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6">
+      <div className="max-w-3xl mx-auto px-4 sm:px-6">
         {/* Header */}
         <div className="text-center mb-12">
-          <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold tracking-tight text-slate-900 mb-4">
-            Choose Your Companion Style
+          <h2 className="text-3xl sm:text-4xl font-bold tracking-tight text-slate-900 mb-4">
+            Choose Your Companion
           </h2>
-          <p className="text-lg sm:text-xl text-slate-600 max-w-2xl mx-auto leading-relaxed">
-            Select a voice and personality that feels most comfortable for you. 
-            You can preview each voice before deciding.
+          <p className="text-lg text-slate-600 max-w-xl mx-auto leading-relaxed">
+            Each companion has a unique voice and personality. Click "Preview" to hear them before deciding.
           </p>
         </div>
 
-        {/* Voice Selection Grid */}
-        <div className="mb-16">
-          <h3 className="text-2xl font-semibold text-slate-900 mb-6 text-center">
-            Select Your Voice
-          </h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-            {VOICES.map((voice) => {
-              const isSelected = selectedVoice === voice.id;
-              const isPlaying = playingVoiceId === voice.id;
+        {/* Persona Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+          {PERSONAS.map((persona) => {
+            const isSelected = selectedPersona === persona.geminiVoiceId;
+            const isPlaying = playingId === persona.geminiVoiceId;
 
-              return (
-                <button
-                  key={voice.id}
-                  onClick={() => handleVoiceClick(voice)}
-                  disabled={isPlaying}
-                  className={`
-                    relative p-6 rounded-2xl border-2 transition-all duration-200
-                    text-left focus:outline-none focus:ring-4 focus:ring-wellness-blue/20
-                    ${
-                      isSelected
-                        ? "border-wellness-blue bg-white shadow-lg scale-105"
-                        : "border-slate-200 bg-white hover:border-wellness-teal hover:shadow-md"
-                    }
-                    ${isPlaying ? "opacity-75 cursor-wait" : "cursor-pointer"}
-                  `}
-                >
-                  {/* Selection Indicator */}
-                  {isSelected && (
-                    <div className="absolute top-3 right-3 h-6 w-6 rounded-full bg-wellness-blue flex items-center justify-center">
-                      <svg
-                        className="w-4 h-4 text-white"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={3}
-                          d="M5 13l4 4L19 7"
-                        />
-                      </svg>
-                    </div>
-                  )}
-
-                  {/* Play Indicator */}
-                  {isPlaying && (
-                    <div className="absolute top-3 right-3 h-6 w-6 rounded-full bg-wellness-teal flex items-center justify-center animate-pulse">
-                      <svg
-                        className="w-4 h-4 text-white"
-                        fill="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path d="M8 5v14l11-7z" />
-                      </svg>
-                    </div>
-                  )}
-
-                  <div className="pr-8">
-                    <h4 className="text-lg font-bold text-slate-900 mb-2">
-                      {voice.name}
-                    </h4>
-                    <p className="text-sm text-slate-600 leading-relaxed">
-                      {voice.description}
-                    </p>
-                    <div className="mt-4 flex items-center gap-2 text-xs text-wellness-blue font-medium">
-                      <svg
-                        className="w-4 h-4"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
-                        />
-                      </svg>
-                      Click to preview
-                    </div>
+            return (
+              <button
+                key={persona.geminiVoiceId}
+                onClick={() => setSelectedPersona(persona.geminiVoiceId)}
+                className={`
+                  relative p-6 rounded-2xl border-2 transition-all duration-200
+                  text-left focus:outline-none focus:ring-4 focus:ring-wellness-blue/20
+                  ${isSelected
+                    ? "border-wellness-blue bg-white shadow-lg scale-[1.02]"
+                    : "border-slate-200 bg-white hover:border-slate-300 hover:shadow-md"
+                  }
+                `}
+              >
+                {/* Selection Indicator */}
+                {isSelected && (
+                  <div className="absolute top-3 right-3 h-6 w-6 rounded-full bg-wellness-blue flex items-center justify-center">
+                    <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                    </svg>
                   </div>
-                </button>
-              );
-            })}
-          </div>
-        </div>
+                )}
 
-        {/* Personality Selection Grid */}
-        <div className="mb-12">
-          <h3 className="text-2xl font-semibold text-slate-900 mb-6 text-center">
-            Select Your Personality
-          </h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-            {PERSONALITIES.map((personality) => {
-              const isSelected = selectedPersonality === personality.id;
-
-              return (
-                <button
-                  key={personality.id}
-                  onClick={() => handlePersonalityClick(personality.id)}
-                  className={`
-                    relative p-6 rounded-2xl border-2 transition-all duration-200
-                    text-left focus:outline-none focus:ring-4 focus:ring-wellness-blue/20
-                    ${
-                      isSelected
-                        ? "border-wellness-blue bg-white shadow-lg scale-105"
-                        : "border-slate-200 bg-white hover:border-wellness-teal hover:shadow-md"
-                    }
-                    cursor-pointer
-                  `}
-                >
-                  {/* Selection Indicator */}
-                  {isSelected && (
-                    <div className="absolute top-3 right-3 h-6 w-6 rounded-full bg-wellness-blue flex items-center justify-center">
-                      <svg
-                        className="w-4 h-4 text-white"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={3}
-                          d="M5 13l4 4L19 7"
-                        />
-                      </svg>
-                    </div>
-                  )}
-
-                  <div className="pr-8">
-                    <div className="flex items-center gap-3 mb-3">
-                      <span className="text-3xl">{personality.icon}</span>
-                      <h4 className="text-lg font-bold text-slate-900">
-                        {personality.name}
-                      </h4>
-                    </div>
-                    <p className="text-sm text-slate-600 leading-relaxed">
-                      {personality.description}
-                    </p>
+                <div className="pr-8">
+                  <h4 className="text-xl font-bold text-slate-900 mb-1">
+                    {persona.label}
+                  </h4>
+                  <p className="text-sm text-slate-600 leading-relaxed mb-4">
+                    {persona.description}
+                  </p>
+                  
+                  {/* Preview Button */}
+                  <div 
+                    onClick={(e) => handlePreview(persona, e)}
+                    className={`inline-flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-full transition-all ${
+                      isPlaying 
+                        ? 'bg-wellness-blue/10 text-wellness-blue animate-pulse' 
+                        : 'bg-slate-100 text-wellness-blue hover:bg-wellness-blue/10'
+                    }`}
+                  >
+                    <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M8 5v14l11-7z" />
+                    </svg>
+                    {isPlaying ? 'Playing...' : 'Preview Voice'}
                   </div>
-                </button>
-              );
-            })}
-          </div>
+                </div>
+              </button>
+            );
+          })}
         </div>
 
         {/* Save Button */}
-        <div className="flex justify-center">
+        <div className="flex justify-center mt-10">
           <button
             onClick={handleSave}
-            disabled={!canSave || isSaving}
+            disabled={!selectedPersona || isSaving}
             className={`
-              px-10 py-4 rounded-full font-bold text-lg sm:text-xl
+              px-10 py-4 rounded-full font-bold text-lg
               transition-all duration-200 shadow-lg
               focus:outline-none focus:ring-4 focus:ring-wellness-blue/30
-              ${
-                canSave && !isSaving
-                  ? "bg-wellness-blue text-white hover:bg-wellness-blue/90 hover:scale-105 active:scale-100"
-                  : "bg-slate-300 text-slate-500 cursor-not-allowed"
+              ${selectedPersona && !isSaving
+                ? "bg-wellness-blue text-white hover:bg-wellness-blue/90 hover:scale-105 active:scale-100"
+                : "bg-slate-300 text-slate-500 cursor-not-allowed"
               }
             `}
           >
             {isSaving
               ? "Saving..."
-              : canSave
-              ? "Save My Companion Style"
-              : "Please select both voice and personality"}
+              : selectedPersona
+              ? "Save My Companion"
+              : "Select a companion to continue"}
           </button>
         </div>
       </div>
@@ -458,4 +254,3 @@ const VoicePersonalitySelector: React.FC<VoicePersonalitySelectorProps> = ({
 };
 
 export default VoicePersonalitySelector;
-

@@ -435,9 +435,12 @@ app.post('/api/trigger-call', async (req, res) => {
     if (!phoneNumber) return res.status(400).json({ error: 'Phone number required' });
 
     try {
-        // Twilio explicitly rejects 'localhost' URLs. It must be a public ngrok URL.
         let webhookUrl;
-        if (process.env.NGROK_URL) {
+        if (process.env.RENDER_EXTERNAL_URL) {
+            // Production: use Render's auto-provided external URL
+            webhookUrl = `${process.env.RENDER_EXTERNAL_URL}/api/twilio/voice`;
+        } else if (process.env.NGROK_URL) {
+            // Local dev: use ngrok tunnel
             webhookUrl = `${process.env.NGROK_URL}/api/twilio/voice`;
         } else {
             const host = req.get('x-forwarded-host') || req.get('host');
@@ -472,6 +475,7 @@ app.post('/api/twilio/voice', async (req, res) => {
 
         const host = req.get('x-forwarded-host') || req.get('host');
         const wsUrl = `wss://${host}/api/twilio/media`;
+        console.log(`[Twilio Webhook] Host: ${host}, WS URL: ${wsUrl}`);
 
         // We completely bypass `<Say>` and `<Gather>` entirely.
         // Opening a raw bidirectional WebSockets audio pipe to the proxy.

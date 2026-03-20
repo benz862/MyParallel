@@ -187,21 +187,25 @@ async function triggerOutboundVoiceCall(userNumber, logReason) {
   // Render provides RENDER_EXTERNAL_URL automatically (e.g. https://myparallel.onrender.com)
   // NGROK_URL is only for local development
   const baseUrl = process.env.RENDER_EXTERNAL_URL || process.env.NGROK_URL;
+  console.log(`[Cron Debug] RENDER_EXTERNAL_URL=${process.env.RENDER_EXTERNAL_URL || '(not set)'}, NGROK_URL=${process.env.NGROK_URL || '(not set)'}, resolved baseUrl=${baseUrl}`);
   if (!baseUrl) {
       console.error("[Cron] CRITICAL: Neither RENDER_EXTERNAL_URL nor NGROK_URL is set. Cannot trigger outbound calls.");
       return;
   }
   const webhookUrl = `${baseUrl}/api/twilio/voice`;
+  console.log(`[Cron] Using webhook URL: ${webhookUrl}`);
 
   try {
     const call = await twilioClient.calls.create({
         method: 'POST',
         url: webhookUrl,
+        statusCallback: webhookUrl.replace('/voice', '/status'),
+        statusCallbackEvent: ['completed', 'failed', 'busy', 'no-answer'],
         to: userNumber,
         from: process.env.TWILIO_PHONE_NUMBER
     });
     
-    await saveMessage(userNumber, 'system', `[System] Outbound Voice Call triggered by background worker. Reason: ${logReason}. Call SID: ${call.sid}`, 'web');
+    await saveMessage(userNumber, 'system', `[System] Outbound Voice Call triggered by background worker. Reason: ${logReason}. Call SID: ${call.sid}. Webhook: ${webhookUrl}`, 'web');
     console.log(`[Cron] Outbound call initiated to ${userNumber}. SID: ${call.sid}`);
   } catch (err) {
     console.error(`[Cron] Failed to initiate voice call to ${userNumber}:`, err);

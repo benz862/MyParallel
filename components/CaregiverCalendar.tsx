@@ -261,14 +261,16 @@ const CaregiverCalendar: React.FC<CaregiverCalendarProps> = ({ patientId, themeC
             });
             
             // Dynamically style based on the Patient's distinct semantic color overlay
-            let borderClass = !isSameMonth(day, currentMonth) ? 'border-transparent opacity-50 bg-slate-50' : 'border-slate-100 bg-white hover:border-slate-300';
-            let customSelector = isSelected ? `border-2 ${themeColor ? themeColor.border : 'border-wellness-blue'} z-10 relative shadow-sm` : '';
+            let borderClass = !isSameMonth(day, currentMonth) ? 'border border-transparent opacity-50 bg-slate-50' : 'border border-slate-100 bg-white hover:border-slate-300';
+            if (isSelected) {
+              borderClass = `border-2 ${themeColor ? themeColor.border : 'border-wellness-blue'} bg-white z-10 relative shadow-sm`;
+            }
 
             return (
               <div 
                 key={day.toString()} 
                 onClick={() => setSelectedDate(day)}
-                className={`min-h-[80px] lg:min-h-[100px] border rounded-xl p-1 lg:p-2 flex flex-col cursor-pointer transition-all duration-200 ${borderClass} ${customSelector}`}
+                className={`min-h-[80px] lg:min-h-[100px] rounded-xl p-1 lg:p-2 flex flex-col cursor-pointer transition-all duration-200 ${borderClass}`}
               >
                 <div className={`text-xs font-bold mb-1 w-6 h-6 flex items-center justify-center rounded-full ${isSelected ? (themeColor ? themeColor.activeBg + ' ' + themeColor.text : 'bg-wellness-blue text-white shadow-md') : isSameMonth(day, currentMonth) ? 'text-slate-700' : 'text-slate-400'}`}>
                   {format(day, 'd')}

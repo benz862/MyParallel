@@ -3,6 +3,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../utils/supabase';
 import VoiceDemo from './VoiceDemo';
 import CaregiverCalendar from './CaregiverCalendar';
+import MedicationManager from './MedicationManager';
 import BulkPatientUploader from './BulkPatientUploader';
 import UserIntakeForm from './UserIntakeForm';
 
@@ -40,6 +41,7 @@ const WebTerminal: React.FC = () => {
   const [patients, setPatients] = useState<any[]>([]);
   const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
   const [upcomingEvents, setUpcomingEvents] = useState<any[]>([]);
+  const [activeRightTab, setActiveRightTab] = useState<'schedule' | 'medications'>('schedule');
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const UPLINK_URL = import.meta.env.DEV ? 'http://localhost:8081' : '';
@@ -354,18 +356,27 @@ const WebTerminal: React.FC = () => {
                      <div className={`absolute top-0 left-0 w-full h-2 ${PATIENT_COLORS[patients.findIndex(p => p.id === selectedPatientId) % PATIENT_COLORS.length].lightBg} border-b ${PATIENT_COLORS[patients.findIndex(p => p.id === selectedPatientId) % PATIENT_COLORS.length].border}`}></div>
                  )}
                  <div className="mb-6 mt-2">
-                     <h2 className="text-2xl font-bold text-slate-800">Schedule & Calendar</h2>
+                     <div className="flex items-center gap-1 mb-4">
+                       <button onClick={() => setActiveRightTab('schedule')} className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors ${activeRightTab === 'schedule' ? 'bg-wellness-blue text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>📅 Schedule</button>
+                       <button onClick={() => setActiveRightTab('medications')} className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors ${activeRightTab === 'medications' ? 'bg-wellness-blue text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>💊 Medications</button>
+                     </div>
                      {selectedPatientId ? (
-                         <p className={`text-sm font-bold mt-1 ${PATIENT_COLORS[patients.findIndex(p => p.id === selectedPatientId) % PATIENT_COLORS.length].text}`}>✓ Syncing schedule for {patients.find(p => p.id === selectedPatientId)?.full_name}</p>
+                         <p className={`text-sm font-bold mt-1 ${PATIENT_COLORS[patients.findIndex(p => p.id === selectedPatientId) % PATIENT_COLORS.length].text}`}>✓ Syncing {activeRightTab === 'schedule' ? 'schedule' : 'medications'} for {patients.find(p => p.id === selectedPatientId)?.full_name}</p>
                      ) : (
-                         <p className="text-sm text-slate-500 mt-1">Select a patient on the left to filter events, or view your global schedule.</p>
+                         <p className="text-sm text-slate-500 mt-1">Select a patient on the left to filter events.</p>
                      )}
                  </div>
                  <div className="overflow-x-auto pb-4">
-                     <CaregiverCalendar 
-                        patientId={selectedPatientId} 
-                        themeColor={selectedPatientId ? PATIENT_COLORS[patients.findIndex(p => p.id === selectedPatientId) % PATIENT_COLORS.length] : undefined}
-                     />
+                     {activeRightTab === 'schedule' ? (
+                       <CaregiverCalendar 
+                          patientId={selectedPatientId} 
+                          themeColor={selectedPatientId ? PATIENT_COLORS[patients.findIndex(p => p.id === selectedPatientId) % PATIENT_COLORS.length] : undefined}
+                       />
+                     ) : selectedPatientId ? (
+                       <MedicationManager patientId={selectedPatientId} />
+                     ) : (
+                       <div className="text-center py-12 text-slate-400">Select a patient to manage medications</div>
+                     )}
                  </div>
              </div>
           </div>

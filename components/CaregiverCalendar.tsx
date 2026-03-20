@@ -31,6 +31,7 @@ const toLocalDateStr = (d: Date | string): string => {
 const CaregiverCalendar: React.FC<CaregiverCalendarProps> = ({ patientId, themeColor }) => {
   const { user } = useAuth();
   const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [medEvents, setMedEvents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -102,6 +103,17 @@ const CaregiverCalendar: React.FC<CaregiverCalendarProps> = ({ patientId, themeC
       console.error('Failed to load events:', err);
     } finally {
       setLoading(false);
+    }
+    // Also fetch medication schedule events
+    try {
+      const UPLINK_URL = import.meta.env.DEV ? 'http://localhost:8081' : '';
+      const monthStart = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
+      const monthEnd = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 2, 0);
+      const res = await fetch(`${UPLINK_URL}/api/medications/${patientId}/schedule?start=${monthStart.toISOString()}&end=${monthEnd.toISOString()}`);
+      const meds = await res.json();
+      setMedEvents(Array.isArray(meds) ? meds : []);
+    } catch (err) {
+      console.error('Failed to load med schedule:', err);
     }
   };
 
@@ -206,6 +218,19 @@ const CaregiverCalendar: React.FC<CaregiverCalendarProps> = ({ patientId, themeC
 
   const selectedDateStr = toLocalDateStr(selectedDate);
   const selectedDateEvents = events.filter(e => toLocalDateStr(e.start_time) === selectedDateStr);
+  const selectedDateMeds = medEvents.filter(m => toLocalDateStr(m.scheduled_for) === selectedDateStr);
+
+  const handleDoseAction = async (eventId: string, status: string) => {
+    try {
+      const UPLINK_URL = import.meta.env.DEV ? 'http://localhost:8081' : '';
+      await fetch(`${UPLINK_URL}/api/medications/administration`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scheduleEventId: eventId, status, details: { recorded_by: user?.id } }),
+      });
+      setMedEvents(prev => prev.map(m => m.id === eventId ? { ...m, status } : m));
+    } catch (err) { console.error('Dose action failed:', err); }
+  };
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col h-full w-full">
@@ -279,6 +304,12 @@ const CaregiverCalendar: React.FC<CaregiverCalendarProps> = ({ patientId, themeC
                    {dayEvents.map(e => (
                        <div key={`${e.id}-${day.toString()}`} className={`text-[10px] lg:text-xs truncate px-1.5 py-0.5 rounded-md font-medium border ${themeColor ? themeColor.lightBg + ' ' + themeColor.text + ' ' + themeColor.border : 'bg-sky-50 text-sky-700 border-sky-100'}`} title={e.title}>
                            • {e.title}
+                       </div>
+                   ))}
+                   {/* Medication dose indicators on month grid */}
+                   {medEvents.filter(m => toLocalDateStr(m.scheduled_for) === dayStr).slice(0, 2).map((m: any) => (
+                       <div key={m.id} className={`text-[10px] lg:text-xs truncate px-1.5 py-0.5 rounded-md font-medium border ${m.status === 'taken' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : m.status === 'missed' ? 'bg-red-50 text-red-600 border-red-100' : 'bg-purple-50 text-purple-700 border-purple-100'}`} title={m.medication_name}>
+                           💊 {m.medication_name}
                        </div>
                    ))}
                 </div>
@@ -368,12 +399,53 @@ const CaregiverCalendar: React.FC<CaregiverCalendarProps> = ({ patientId, themeC
             </form>
          )}
 
-         {selectedDateEvents.length === 0 ? (
-             <div className="text-center py-6 text-slate-500 border-2 border-dashed border-slate-200 rounded-xl">
-                 No check-ins scheduled for this day.
-             </div>
-         ) : (
-             <div className="space-y-3">
+          {selectedDateEvents.length === 0 && selectedDateMeds.length === 0 ? (
+              <div className="text-center py-6 text-slate-500 border-2 border-dashed border-slate-200 rounded-xl">
+                  No check-ins or medications scheduled for this day.
+              </div>
+          ) : (
+              <div className="space-y-3">
+                 {/* MEDICATION DOSE EVENTS */}
+                 {selectedDateMeds.map((med: any) => {
+                    const statusColors: any = { due: 'border-purple-200 bg-purple-50/30', taken: 'border-emerald-200 bg-emerald-50/30', missed: 'border-red-200 bg-red-50/30', refused: 'border-amber-200 bg-amber-50/30', held: 'border-slate-300 bg-slate-50', skipped: 'border-slate-200 bg-slate-50' };
+                    const statusBadge: any = { due: 'bg-purple-100 text-purple-700', taken: 'bg-emerald-100 text-emerald-700', missed: 'bg-red-100 text-red-700', refused: 'bg-amber-100 text-amber-700', held: 'bg-slate-200 text-slate-600', skipped: 'bg-slate-200 text-slate-500' };
+                    return (
+                      <div key={med.id} className={`p-4 border rounded-xl transition-all ${statusColors[med.status] || 'border-slate-200'}`}>
+                        <div className="flex items-start gap-3">
+                          <div className="bg-purple-50 text-purple-700 font-bold px-3 py-2 rounded border border-purple-100 text-sm shrink-0">
+                            {(() => { try { return format(new Date(med.scheduled_for), 'h:mm a'); } catch { return 'N/A'; } })()}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              <h4 className="font-bold text-slate-800">💊 {med.medication_name}</h4>
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${statusBadge[med.status] || 'bg-slate-100 text-slate-500'}`}>{med.status}</span>
+                            </div>
+                            {med.dose_text && <p className="text-sm text-slate-600">{med.dose_text} {med.route && `• ${med.route}`}</p>}
+                            {med.instruction_summary && (
+                              <div className="mt-2 space-y-0.5">
+                                {med.instruction_summary.split('\n').map((line: string, i: number) => (
+                                  <div key={i} className="text-xs text-slate-500 flex items-start gap-1.5">
+                                    <span className="text-purple-400 mt-0.5">•</span> {line}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            {/* Dose action buttons */}
+                            {med.status === 'due' && (
+                              <div className="flex flex-wrap gap-1.5 mt-3">
+                                <button onClick={() => handleDoseAction(med.id, 'taken')} className="px-3 py-1.5 bg-emerald-500 text-white rounded-lg text-xs font-bold hover:bg-emerald-600 transition-colors">✓ Taken</button>
+                                <button onClick={() => handleDoseAction(med.id, 'missed')} className="px-3 py-1.5 bg-red-50 text-red-600 border border-red-200 rounded-lg text-xs font-bold hover:bg-red-100 transition-colors">✗ Missed</button>
+                                <button onClick={() => handleDoseAction(med.id, 'refused')} className="px-3 py-1.5 bg-amber-50 text-amber-600 border border-amber-200 rounded-lg text-xs font-bold hover:bg-amber-100 transition-colors">⊘ Refused</button>
+                                <button onClick={() => handleDoseAction(med.id, 'held')} className="px-3 py-1.5 bg-slate-100 text-slate-600 border border-slate-200 rounded-lg text-xs font-bold hover:bg-slate-200 transition-colors">⏸ Held</button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                 })}
+
+                 {/* REGULAR CALENDAR EVENTS */}
                 {selectedDateEvents.map(event => {
                    const isEditing = editingEventId === event.id;
                    return (

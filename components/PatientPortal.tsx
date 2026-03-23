@@ -26,6 +26,7 @@ export const PatientPortal: React.FC = () => {
     const [data, setData] = useState<PatientData>({ meds: [], tasks: [], appointments: [], vitals: null, messages: [], unreadCount: 0 });
     const [msgText, setMsgText] = useState('');
     const [sendingMsg, setSendingMsg] = useState(false);
+    const [patientContext, setPatientContext] = useState('');
     const msgEndRef = useRef<HTMLDivElement>(null);
     const UPLINK = import.meta.env.DEV ? 'http://localhost:8081' : '';
 
@@ -44,6 +45,11 @@ export const PatientPortal: React.FC = () => {
     useEffect(() => {
         if (patient?.id) {
             loadData();
+            // Fetch voice context from server (same as phone call context)
+            fetch(`${UPLINK}/api/patient-context/${patient.id}`)
+                .then(r => r.json())
+                .then(ctx => { if (ctx.contextString) setPatientContext(ctx.contextString); })
+                .catch(err => console.error('Failed to load patient context:', err));
             const interval = setInterval(loadData, 30000);
             // Realtime message subscription
             const sub = supabase.channel(`patient-msg-${patient.id}`)
@@ -78,9 +84,8 @@ export const PatientPortal: React.FC = () => {
             // Latest vitals
             supabase.from('health_vitals_logs').select('*').eq('patient_id', patient.id)
                 .order('recorded_at', { ascending: false }).limit(1).single(),
-            // Messages
-            supabase.from('care_messages').select('*').eq('patient_id', patient.id)
-                .order('created_at', { ascending: true }).limit(50),
+            // Messages — via API to avoid RLS/auth issues
+            fetch(`${UPLINK}/api/messages/${patient.id}`).then(r => r.json()),
         ]);
 
         setData({
@@ -88,8 +93,8 @@ export const PatientPortal: React.FC = () => {
             tasks: taskRes.status === 'fulfilled' ? (taskRes.value.data || []) : [],
             appointments: aptRes.status === 'fulfilled' ? (aptRes.value.data || []) : [],
             vitals: vitRes.status === 'fulfilled' ? vitRes.value.data : null,
-            messages: msgRes.status === 'fulfilled' ? (msgRes.value.data || []) : [],
-            unreadCount: msgRes.status === 'fulfilled' ? (msgRes.value.data || []).filter((m: any) => !m.is_read && m.sender_type !== 'patient').length : 0,
+            messages: msgRes.status === 'fulfilled' ? (Array.isArray(msgRes.value) ? msgRes.value : []) : [],
+            unreadCount: msgRes.status === 'fulfilled' ? (Array.isArray(msgRes.value) ? msgRes.value : []).filter((m: any) => !m.is_read && m.sender_type !== 'patient').length : 0,
         });
     };
 
@@ -97,12 +102,15 @@ export const PatientPortal: React.FC = () => {
         if (!msgText.trim() || !patient?.id) return;
         setSendingMsg(true);
         try {
-            await supabase.from('care_messages').insert({
-                patient_id: patient.id,
-                sender_type: 'patient',
-                sender_name: patient.preferred_name || patient.full_name?.split(' ')[0] || 'Patient',
-                message_text: msgText.trim(),
-                message_type: 'text',
+            await fetch(`${UPLINK}/api/messages`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    patient_id: patient.id,
+                    sender_type: 'patient',
+                    sender_name: patient.preferred_name || patient.full_name?.split(' ')[0] || 'Patient',
+                    message_text: msgText.trim(),
+                    message_type: 'text',
+                }),
             });
             setMsgText('');
             loadData();
@@ -112,8 +120,7 @@ export const PatientPortal: React.FC = () => {
 
     const markMessagesRead = async () => {
         if (!patient?.id) return;
-        await supabase.from('care_messages').update({ is_read: true, read_at: new Date().toISOString() })
-            .eq('patient_id', patient.id).eq('is_read', false).neq('sender_type', 'patient');
+        await fetch(`${UPLINK}/api/messages/${patient.id}/read`, { method: 'PUT' });
         loadData();
     };
 
@@ -183,7 +190,7 @@ export const PatientPortal: React.FC = () => {
                             <div style={{ ...card, background: 'linear-gradient(135deg, #f0f4ff, #ede9fe)', border: '1px solid #c7d2fe', marginBottom: '12px' }}>
                                 <h3 style={{ fontSize: '15px', fontWeight: 700, color: '#4338ca', margin: '0 0 8px' }}>🎙️ Talk to Your Companion</h3>
                                 <p style={{ fontSize: '12px', color: '#6366f1', margin: '0 0 12px' }}>Ask about your meds, schedule, or just chat</p>
-                                <VoiceDemo lockedVoiceId={patient.voice_id || 'Puck'} lockedPhoneNumber={patient.phone_number} patientId={patient.id} />
+                                <VoiceDemo lockedVoiceId={patient.voice_id || 'Puck'} lockedPhoneNumber={patient.phone_number} patientId={patient.id} patientContextString={patientContext} />
                             </div>
 
                             {/* Call My Phone */}

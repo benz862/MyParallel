@@ -919,6 +919,27 @@ app.put('/api/family/alerts/:alertId/read', async (req, res) => {
 });
 
 // ==============================
+// Patient Context API (for PWA Voice Assistant)
+// ==============================
+app.get('/api/patient-context/:patientId', async (req, res) => {
+    if (!supabase) return res.status(500).json({ error: 'DB not configured' });
+    try {
+        const { data: profile } = await supabase.from('user_profiles').select('*').eq('id', req.params.patientId).single();
+        if (!profile) return res.status(404).json({ error: 'Patient not found' });
+        
+        // Reuse the same context-building logic as getUserProfileContext
+        const fakePhoneNumber = profile.phone_number;
+        const contextData = await getUserProfileContext(fakePhoneNumber);
+        res.json({
+            contextString: contextData?.contextString || '',
+            voiceId: contextData?.voiceId || profile.voice_id || 'Puck',
+            caregiverName: profile.caregiver_name || null,
+            caregiverPhone: profile.caregiver_phone || null,
+        });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ==============================
 // PHASE 7: Care Messages API
 // ==============================
 
@@ -934,15 +955,17 @@ app.get('/api/messages/:patientId', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// POST message (caregiver → patient)
+// POST message (any sender → patient thread)
 app.post('/api/messages', async (req, res) => {
     if (!supabase) return res.status(500).json({ error: 'DB not configured' });
-    const { patient_id, sender_name, message_text, message_type, is_urgent } = req.body;
+    const { patient_id, sender_type, sender_name, message_text, message_type, is_urgent } = req.body;
     if (!patient_id || !message_text) return res.status(400).json({ error: 'patient_id and message_text required' });
+    const validSenders = ['patient', 'caregiver', 'family', 'system'];
+    const resolvedSender = validSenders.includes(sender_type) ? sender_type : 'caregiver';
     try {
         const { data, error } = await supabase.from('care_messages').insert({
-            patient_id, sender_type: 'caregiver',
-            sender_name: sender_name || 'Caregiver',
+            patient_id, sender_type: resolvedSender,
+            sender_name: sender_name || (resolvedSender === 'patient' ? 'Patient' : 'Caregiver'),
             message_text, message_type: message_type || 'text',
             is_urgent: is_urgent || false,
         }).select().single();

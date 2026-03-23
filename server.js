@@ -311,6 +311,7 @@ USER PROFILE CONTEXT:
 - Health Conditions: ${(profile.conditions || []).join(', ') || 'None specified'}
 - Caregiver: ${caregiverName}${caregiverName !== 'Not specified' ? ` (IMPORTANT: Always refer to the caregiver as "${caregiverName}" by name when discussing care instructions or relaying information.)` : ''}
 - Caregiver Phone: ${caregiverPhone}${caregiverPhone !== 'Not available' ? ' (If the patient asks for their caregiver\'s phone number, provide this number.)' : ''}
+- Emergency Contact: ${profile.emergency_contact_name || 'Not specified'}${profile.emergency_contact_phone ? ' — Phone: ' + profile.emergency_contact_phone : ''}${profile.emergency_contact_name ? ' (If the patient asks for their emergency contact, provide this name and phone number.)' : ''}
 - Automated Check-in Schedule: ${formattedSchedule}
 - Interface Preference: ${profile.selected_personality || 'Warm and supportive'}
 

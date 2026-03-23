@@ -618,62 +618,6 @@ const UserIntakeForm: React.FC<UserIntakeFormProps> = ({
         </>
       )}
 
-      {/* Companion Style Selection */}
-      {(!isWizardMode || showOnlyEmergency) && (
-          <div className="bg-slate-50/50 rounded-3xl border border-slate-200 p-8 sm:p-12 shadow-inner my-12">
-              <div className="mb-12 text-center">
-                <h2 className="text-3xl sm:text-4xl font-extrabold text-[#1a2332] mb-4">Choose Your Companion Style</h2>
-                <p className="text-slate-500 max-w-2xl mx-auto text-lg">Select a voice and personality that feels most comfortable for you. You can preview each voice before deciding.</p>
-              </div>
-
-              <h3 className="text-2xl font-bold text-center text-[#1a2332] mb-8">Choose Your Companion</h3>
-              <p className="text-center text-slate-500 mb-8">Each companion has a unique voice and personality combined.</p>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {VOICE_PRESETS.map((persona) => {
-                  const isSelected = formData.voice_id === persona.id;
-                  return (
-                  <div
-                    key={persona.id}
-                    onClick={() => setFormData((prev) => ({ ...prev, voice_id: persona.id, emotional_trait: persona.label }))}
-                    className={`relative p-6 sm:p-8 rounded-2xl border-2 cursor-pointer transition-all bg-white min-h-[160px] flex flex-col justify-between ${
-                      isSelected
-                        ? "border-[#2c81c0] shadow-md ring-4 ring-blue-50"
-                        : "border-slate-200 shadow-sm hover:border-slate-300 hover:shadow-md"
-                    }`}
-                  >
-                    {isSelected && (
-                       <div className="absolute top-4 right-4 text-white bg-[#2c81c0] rounded-full p-1">
-                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                       </div>
-                    )}
-                    <div>
-                       <h4 className="font-bold text-xl text-slate-900 mb-2">{persona.label}</h4>
-                       <p className="text-sm text-slate-500 leading-relaxed">{persona.desc}</p>
-                    </div>
-                    <div className="mt-4">
-                        <button 
-                           onClick={(e) => playVoicePreview(persona.id, persona.label, e)}
-                           className="text-sm font-semibold text-[#2c81c0] hover:text-sky-700 flex items-center gap-2"
-                        >
-                           {playingVoice === persona.id ? (
-                               <span className="flex gap-1.5 items-center">
-                                   <span className="w-2 h-2 bg-[#2c81c0] rounded-full animate-bounce"></span>
-                                   <span className="w-2 h-2 bg-[#2c81c0] rounded-full animate-bounce delay-100"></span>
-                                   <span className="w-2 h-2 bg-[#2c81c0] rounded-full animate-bounce delay-200"></span>
-                               </span>
-                           ) : (
-                               <>
-                                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
-                                 Preview voice
-                               </>
-                           )}
-                        </button>
-                    </div>
-                  </div>
-                )})}
-              </div>
-          </div>
-      )}
 
       {/* Submit Button */}
       <div className="flex justify-center">

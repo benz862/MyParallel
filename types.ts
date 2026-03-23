@@ -93,6 +93,9 @@ export interface UserProfile {
   notes?: string | null;
   selected_voice?: string | null;
   selected_personality?: string | null;
+  voice_id?: string | null;
+  companion_name?: string | null;
+  companion_personality?: string | null;
   google_calendar_enabled?: boolean | null;
   apple_calendar_enabled?: boolean | null;
   emergency_contact_name?: string | null;

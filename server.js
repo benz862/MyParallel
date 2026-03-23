@@ -212,23 +212,46 @@ async function getUserProfileContext(phoneNumber) {
             }
         } catch(err) { console.error('Failed fetching today med schedule', err); }
 
-        // Fetch today's care tasks
+        // Fetch today's care tasks with completion status
         let todayCareTasks = "No care tasks today";
         try {
             const tz = profile.timezone || 'America/New_York';
             const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: tz });
+            const dayNames = ['sun','mon','tue','wed','thu','fri','sat'];
+            const todayDay = dayNames[new Date(todayStr + 'T12:00:00').getDay()];
+
             const { data: tasks } = await supabase
-                .from('care_task_instances')
+                .from('care_tasks')
                 .select('*')
                 .eq('patient_id', profile.id)
-                .eq('scheduled_date', todayStr)
-                .order('scheduled_time', { ascending: true, nullsFirst: false });
+                .eq('is_active', true)
+                .order('scheduled_time', { ascending: true });
+
             if (tasks && tasks.length > 0) {
-                const done = tasks.filter(t => t.status === 'completed').length;
-                todayCareTasks = `${done}/${tasks.length} completed\n` + tasks.map(t => {
-                    const time = t.scheduled_time ? t.scheduled_time.substring(0, 5) : '';
-                    return `- ${t.icon || '📋'} ${time ? time + ': ' : ''}${t.title} — ${t.status.toUpperCase()}`;
-                }).join('\n');
+                // Filter by active_days
+                const todayTasks = tasks.filter(t => {
+                    const days = t.active_days || ['mon','tue','wed','thu','fri','sat','sun'];
+                    return days.includes(todayDay);
+                });
+
+                if (todayTasks.length > 0) {
+                    // Fetch today's completions
+                    const taskIds = todayTasks.map(t => t.id);
+                    const { data: completions } = await supabase
+                        .from('care_task_completions')
+                        .select('task_id')
+                        .in('task_id', taskIds)
+                        .eq('completed_date', todayStr);
+                    const completedIds = new Set((completions || []).map(c => c.task_id));
+                    const done = todayTasks.filter(t => completedIds.has(t.id)).length;
+
+                    todayCareTasks = `${done}/${todayTasks.length} completed\n` + todayTasks.map(t => {
+                        const time = t.scheduled_time ? t.scheduled_time.substring(0, 5) : '';
+                        const status = completedIds.has(t.id) ? 'DONE ✓' : 'NOT DONE';
+                        const note = t.description ? ` (Caregiver note: "${t.description}")` : '';
+                        return `- ${time ? time + ': ' : ''}${t.title} — ${status}${note}`;
+                    }).join('\n');
+                }
             }
         } catch(err) { console.error('Failed fetching care tasks', err); }
 
@@ -1011,6 +1034,98 @@ app.get('/api/messages/:patientId/unread', async (req, res) => {
             .eq('patient_id', req.params.patientId).eq('is_read', false).eq('sender_type', 'patient');
         if (error) throw error;
         res.json({ unread: count || 0 });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+
+// ─── CARE TASKS API ─────────────────────────────────────────────
+app.get('/api/care-tasks/:patientId', async (req, res) => {
+    try {
+        const { patientId } = req.params;
+        const { date } = req.query;
+        const { data: tasks, error } = await supabase
+            .from('care_tasks').select('*')
+            .eq('patient_id', patientId).eq('is_active', true)
+            .order('scheduled_time', { ascending: true });
+        if (error) throw error;
+        const dateStr = date || new Date().toLocaleDateString('en-CA');
+        const taskIds = (tasks || []).map(t => t.id);
+        let completedIds = new Set();
+        if (taskIds.length > 0) {
+            const { data: completions } = await supabase
+                .from('care_task_completions').select('task_id')
+                .in('task_id', taskIds).eq('completed_date', dateStr);
+            completedIds = new Set((completions || []).map(c => c.task_id));
+        }
+        res.json((tasks || []).map(t => ({ ...t, completed: completedIds.has(t.id) })));
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/care-tasks', async (req, res) => {
+    try {
+        const { patient_id, title, description, scheduled_time, category, active_days } = req.body;
+        const { data, error } = await supabase.from('care_tasks').insert({
+            patient_id, title, description: description || null,
+            scheduled_time: scheduled_time || '09:00',
+            category: category || 'general',
+            active_days: active_days || ['mon','tue','wed','thu','fri','sat','sun']
+        }).select().single();
+        if (error) throw error;
+        res.json(data);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.put('/api/care-tasks/:id', async (req, res) => {
+    try {
+        const { title, description, scheduled_time, category, active_days } = req.body;
+        const { data, error } = await supabase.from('care_tasks')
+            .update({ title, description, scheduled_time, category, active_days })
+            .eq('id', req.params.id).select().single();
+        if (error) throw error;
+        res.json(data);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.delete('/api/care-tasks/:id', async (req, res) => {
+    try {
+        const { error } = await supabase.from('care_tasks')
+            .update({ is_active: false }).eq('id', req.params.id);
+        if (error) throw error;
+        res.json({ success: true });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/care-tasks/:id/duplicate', async (req, res) => {
+    try {
+        const { data: original, error: fetchErr } = await supabase.from('care_tasks')
+            .select('*').eq('id', req.params.id).single();
+        if (fetchErr) throw fetchErr;
+        const { id, created_at, ...copy } = original;
+        copy.title = copy.title + ' (copy)';
+        const { data, error } = await supabase.from('care_tasks').insert(copy).select().single();
+        if (error) throw error;
+        res.json(data);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/care-tasks/:taskId/complete', async (req, res) => {
+    try {
+        const { taskId } = req.params;
+        const { date, completed_by, patient_id } = req.body;
+        const dateStr = date || new Date().toLocaleDateString('en-CA');
+        const { data: existing } = await supabase.from('care_task_completions')
+            .select('id').eq('task_id', taskId).eq('completed_date', dateStr).maybeSingle();
+        if (existing) {
+            await supabase.from('care_task_completions').delete().eq('id', existing.id);
+            res.json({ completed: false });
+        } else {
+            const { error } = await supabase.from('care_task_completions').insert({
+                task_id: taskId, patient_id,
+                completed_date: dateStr, completed_by: completed_by || 'caregiver'
+            });
+            if (error) throw error;
+            res.json({ completed: true });
+        }
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

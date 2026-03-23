@@ -3,6 +3,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../utils/supabase';
 import VoiceDemo from './VoiceDemo';
 import CaregiverCalendar from './CaregiverCalendar';
+import CareTaskManager from './CareTaskManager';
 import MedicationManager from './MedicationManager';
 import MedicationAdherenceWidget from './MedicationAdherenceWidget';
 import DailyCareBoard from './DailyCareBoard';
@@ -379,10 +380,13 @@ const WebTerminal: React.FC = () => {
               </div>
               <div className="overflow-x-auto pb-4">
                 {activeRightTab === 'schedule' ? (
+                  <>
                   <CaregiverCalendar
                     patientId={selectedPatientId}
                     themeColor={selectedPatientId ? PATIENT_COLORS[patients.findIndex(p => p.id === selectedPatientId) % PATIENT_COLORS.length] : undefined}
                   />
+                  <CareTaskManager patientId={selectedPatientId} />
+                  </>
                 ) : activeRightTab === 'care' && selectedPatientId ? (
                   <DailyCareBoard patientId={selectedPatientId} />
                 ) : activeRightTab === 'vitals' && selectedPatientId ? (

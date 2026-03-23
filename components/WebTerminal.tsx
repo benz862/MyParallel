@@ -4,6 +4,7 @@ import { supabase } from '../utils/supabase';
 import VoiceDemo from './VoiceDemo';
 import CaregiverCalendar from './CaregiverCalendar';
 import CareTaskManager from './CareTaskManager';
+import ContactsDirectory from './ContactsDirectory';
 import MedicationManager from './MedicationManager';
 import MedicationAdherenceWidget from './MedicationAdherenceWidget';
 import DailyCareBoard from './DailyCareBoard';
@@ -542,6 +543,11 @@ ${upcomingEvents.length > 0 ? upcomingEvents.map(e => `- ${new Date(e.start_time
                        onSave={handleSavePatient} 
                        initialData={editingPatientId ? patients.find(p => p.id === editingPatientId) : {}}
                    />
+                   {editingPatientId && (
+                     <div className="mt-6">
+                       <ContactsDirectory patientId={editingPatientId} />
+                     </div>
+                   )}
                </div>
            </div>
         </div>

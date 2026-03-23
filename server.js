@@ -255,6 +255,30 @@ async function getUserProfileContext(phoneNumber) {
             }
         } catch(err) { console.error('Failed fetching care tasks', err); }
 
+        // Fetch patient contacts directory (doctors, family, friends)
+        let contactsContext = "No contacts on file";
+        try {
+            const { data: contacts } = await supabase
+                .from('patient_contacts').select('*')
+                .eq('patient_id', profile.id).order('contact_type').order('name');
+            if (contacts && contacts.length > 0) {
+                const doctors = contacts.filter(c => c.contact_type === 'doctor');
+                const family = contacts.filter(c => c.contact_type === 'family');
+                const friends = contacts.filter(c => c.contact_type === 'friend');
+                const parts = [];
+                if (doctors.length) parts.push('DOCTORS:\n' + doctors.map(d =>
+                    `- Dr. ${d.name}${d.specialty ? ` (${d.specialty})` : ''}${d.clinic_name ? ` at ${d.clinic_name}` : ''}${d.phone ? ` — Phone: ${d.phone}` : ''}${d.notes ? ` [${d.notes}]` : ''}`
+                ).join('\n'));
+                if (family.length) parts.push('FAMILY:\n' + family.map(f =>
+                    `- ${f.name}${f.relationship ? ` (${f.relationship})` : ''}${f.phone ? ` — Phone: ${f.phone}` : ''}${f.notes ? ` [${f.notes}]` : ''}`
+                ).join('\n'));
+                if (friends.length) parts.push('FRIENDS:\n' + friends.map(f =>
+                    `- ${f.name}${f.relationship ? ` (${f.relationship})` : ''}${f.phone ? ` — Phone: ${f.phone}` : ''}${f.notes ? ` [${f.notes}]` : ''}`
+                ).join('\n'));
+                contactsContext = parts.join('\n');
+            }
+        } catch(err) { console.error('Failed fetching contacts', err); }
+
         // Fetch latest vitals
         let vitalsContext = "No recent vitals recorded";
         try {
@@ -337,6 +361,10 @@ USER PROFILE CONTEXT:
 - Emergency Contact: ${profile.emergency_contact_name || 'Not specified'}${profile.emergency_contact_phone ? ' — Phone: ' + profile.emergency_contact_phone : ''}${profile.emergency_contact_name ? ' (If the patient asks for their emergency contact, provide this name and phone number.)' : ''}
 - Automated Check-in Schedule: ${formattedSchedule}
 - Interface Preference: ${profile.selected_personality || 'Warm and supportive'}
+
+PATIENT CONTACTS DIRECTORY:
+${contactsContext}
+IMPORTANT: If the patient asks for any doctor, family member, or friend's phone number, name, or details, provide it from this directory. Be helpful and specific.
 
 CURRENT MEDICATIONS (prescribed):
 ${medicationContext}
@@ -1126,6 +1154,53 @@ app.post('/api/care-tasks/:taskId/complete', async (req, res) => {
             if (error) throw error;
             res.json({ completed: true });
         }
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+
+// ─── PATIENT CONTACTS DIRECTORY API ─────────────────────────────
+app.get('/api/patient-contacts/:patientId', async (req, res) => {
+    try {
+        const { data, error } = await supabase.from('patient_contacts')
+            .select('*').eq('patient_id', req.params.patientId)
+            .order('contact_type').order('name');
+        if (error) throw error;
+        res.json(data || []);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/patient-contacts', async (req, res) => {
+    try {
+        const { patient_id, contact_type, name, phone, email, relationship, specialty, clinic_name, notes, is_primary } = req.body;
+        const { data, error } = await supabase.from('patient_contacts').insert({
+            patient_id, contact_type: contact_type || 'family', name,
+            phone: phone || null, email: email || null,
+            relationship: relationship || null, specialty: specialty || null,
+            clinic_name: clinic_name || null, notes: notes || null,
+            is_primary: is_primary || false
+        }).select().single();
+        if (error) throw error;
+        res.json(data);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.put('/api/patient-contacts/:id', async (req, res) => {
+    try {
+        const { contact_type, name, phone, email, relationship, specialty, clinic_name, notes, is_primary } = req.body;
+        const { data, error } = await supabase.from('patient_contacts')
+            .update({ contact_type, name, phone, email, relationship, specialty, clinic_name, notes, is_primary })
+            .eq('id', req.params.id).select().single();
+        if (error) throw error;
+        res.json(data);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.delete('/api/patient-contacts/:id', async (req, res) => {
+    try {
+        const { error } = await supabase.from('patient_contacts')
+            .delete().eq('id', req.params.id);
+        if (error) throw error;
+        res.json({ success: true });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

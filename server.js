@@ -279,14 +279,31 @@ async function getUserProfileContext(phoneNumber) {
 
         const caregiverName = profile.caregiver_name || 'Not specified';
         const caregiverPhone = profile.caregiver_phone || 'Not available';
+        const companionName = profile.companion_name || 'MyParallel';
+        const personalityKey = profile.companion_personality || 'warm_empathetic';
+        const personalityMap = {
+            warm_empathetic: 'Be warm, empathetic, and nurturing. Show genuine care and concern. Use a gentle, reassuring tone.',
+            cheerful_humorous: 'Be cheerful, upbeat, and sprinkle in light humor. Make the patient smile. Keep things fun while still being helpful.',
+            calm_gentle: 'Be very calm, soft-spoken, and peaceful. Speak slowly and gently. Create a soothing, stress-free atmosphere.',
+            direct_clinical: 'Be professional, direct, and factual. Get to the point. Provide clear, concise medical information without excessive emotion.',
+            playful_friendly: 'Be playful, enthusiastic, and friendly like a good buddy. Use casual language. Be engaging and energetic.',
+            motivational: 'Be motivational, encouraging, and upbeat. Celebrate small wins. Push the patient to stay positive and active.',
+        };
+        const personalityInstruction = personalityMap[personalityKey] || personalityMap.warm_empathetic;
 
         return {
           voiceId: profile.voice_id || 'Puck',
           emotionalTrait: profile.emotional_trait || 'Empathetic and warm',
           timezone: profile.timezone || 'America/New_York',
+          companionName,
+          personalityInstruction,
           contextString: `
 CRITICAL TEMPORAL CONTEXT:
 The current accurate local time for the user is: ${new Date().toLocaleString('en-US', { timeZone: profile.timezone || 'America/New_York' })}
+
+YOUR IDENTITY:
+- Your name is "${companionName}". When you greet the patient, introduce yourself as ${companionName}. Always refer to yourself as ${companionName}.
+- PERSONALITY: ${personalityInstruction}
 
 USER PROFILE CONTEXT:
 - Name: ${profile.preferred_name || profile.full_name || 'Unknown'}

@@ -41,6 +41,7 @@ const CaregiverCalendar: React.FC<CaregiverCalendarProps> = ({ patientId, themeC
   const [editTime, setEditTime] = useState('');
   const [editDate, setEditDate] = useState('');
   const [editReminder, setEditReminder] = useState(0);
+  const [editTone, setEditTone] = useState('warm_empathetic');
 
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(new Date());
@@ -55,6 +56,7 @@ const CaregiverCalendar: React.FC<CaregiverCalendarProps> = ({ patientId, themeC
   const [repeatEndDate, setRepeatEndDate] = useState('');
   const [reminderMinutes, setReminderMinutes] = useState(0);
   const [eventDate, setEventDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [callTone, setCallTone] = useState('warm_empathetic');
   
   useEffect(() => {
     fetchEvents();
@@ -152,6 +154,7 @@ const CaregiverCalendar: React.FC<CaregiverCalendarProps> = ({ patientId, themeC
                 user_id: patientId, title, description,
                 start_time: startDateTime, end_time: endDateTime,
                 reminder_minutes: reminderMinutes,
+                call_tone: callTone,
                 repeat_type: repeatType,
                 repeat_interval: repeatType !== 'none' ? repeatInterval : 1,
                 repeat_days: repeatType === 'weekly' ? JSON.stringify(repeatDays) : JSON.stringify([]),
@@ -170,6 +173,7 @@ const CaregiverCalendar: React.FC<CaregiverCalendarProps> = ({ patientId, themeC
         setRepeatDays([]);
         setRepeatEndDate('');
         setReminderMinutes(0);
+        setCallTone('warm_empathetic');
     } catch (err: any) {
         setError(err.message || 'Failed to add event');
     }
@@ -193,6 +197,7 @@ const CaregiverCalendar: React.FC<CaregiverCalendarProps> = ({ patientId, themeC
         setEditDate(format(new Date(event.start_time), 'yyyy-MM-dd'));
       } catch { setEditTime('09:00'); setEditDate(format(new Date(), 'yyyy-MM-dd')); }
       setEditReminder((event as any).reminder_minutes || 0);
+      setEditTone((event as any).call_tone || 'warm_empathetic');
   };
 
   const handleUpdateEvent = async () => {
@@ -210,7 +215,8 @@ const CaregiverCalendar: React.FC<CaregiverCalendarProps> = ({ patientId, themeC
                   description: editDescription,
                   start_time: newStart,
                   end_time: newEnd,
-                  reminder_minutes: editReminder
+                  reminder_minutes: editReminder,
+                  call_tone: editTone,
               })
               .eq('id', editingEventId);
           if (updateError) throw updateError;
@@ -397,6 +403,17 @@ const CaregiverCalendar: React.FC<CaregiverCalendarProps> = ({ patientId, themeC
                    </select>
                  </div>
               </div>
+              <div>
+                 <label className="block text-xs font-bold text-slate-500 mb-1 uppercase tracking-wider">🎭 Call Tone / Emotion</label>
+                 <select value={callTone} onChange={e => setCallTone(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded focus:ring-1 focus:ring-wellness-blue">
+                   <option value="warm_empathetic">🤗 Warm & Empathetic</option>
+                   <option value="cheerful_humorous">😄 Cheerful & Humorous</option>
+                   <option value="calm_gentle">🧘 Calm & Gentle</option>
+                   <option value="direct_clinical">🩺 Direct & Clinical</option>
+                   <option value="playful_friendly">🎉 Playful & Friendly</option>
+                   <option value="motivational">💪 Motivational & Upbeat</option>
+                 </select>
+              </div>
               
               {repeatType !== 'none' && (
                  <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg space-y-4">
@@ -521,6 +538,17 @@ const CaregiverCalendar: React.FC<CaregiverCalendarProps> = ({ patientId, themeC
                                 <option value={30}>30 min before</option>
                                 <option value={60}>1 hour before</option>
                                 <option value={120}>2 hours before</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wider">🎭 Call Tone</label>
+                              <select value={editTone} onChange={e => setEditTone(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded text-sm focus:ring-1 focus:ring-wellness-blue">
+                                <option value="warm_empathetic">🤗 Warm & Empathetic</option>
+                                <option value="cheerful_humorous">😄 Cheerful & Humorous</option>
+                                <option value="calm_gentle">🧘 Calm & Gentle</option>
+                                <option value="direct_clinical">🩺 Direct & Clinical</option>
+                                <option value="playful_friendly">🎉 Playful & Friendly</option>
+                                <option value="motivational">💪 Motivational & Upbeat</option>
                               </select>
                             </div>
                           </div>

@@ -337,6 +337,48 @@ const UserIntakeForm: React.FC<UserIntakeFormProps> = ({
                 )}
             </div>
           </div>
+
+          {/* Voice Companion */}
+          <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-sm">
+            <h3 className="text-xl sm:text-2xl font-semibold text-slate-900 mb-2">🤖 Voice Companion</h3>
+            <p className="text-sm text-slate-500 mb-6">Customize how the AI assistant introduces itself and behaves during calls</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Companion Name
+                </label>
+                <input
+                  type="text"
+                  name="companion_name"
+                  value={formData.companion_name || ''}
+                  onChange={handleInputChange}
+                  className="w-full px-4 py-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-wellness-blue focus:border-wellness-blue text-base"
+                  placeholder="e.g. Buddy, Sarah, Companion"
+                />
+                <p className="text-xs text-slate-500 mt-1">The name the VA uses when greeting your patient</p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Default Personality
+                </label>
+                <select
+                  name="companion_personality"
+                  value={formData.companion_personality || 'warm_empathetic'}
+                  onChange={handleInputChange}
+                  className="w-full px-4 py-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-wellness-blue focus:border-wellness-blue text-base"
+                >
+                  <option value="warm_empathetic">🤗 Warm & Empathetic</option>
+                  <option value="cheerful_humorous">😄 Cheerful & Humorous</option>
+                  <option value="calm_gentle">🧘 Calm & Gentle</option>
+                  <option value="direct_clinical">🩺 Direct & Clinical</option>
+                  <option value="playful_friendly">🎉 Playful & Friendly</option>
+                  <option value="motivational">💪 Motivational & Upbeat</option>
+                </select>
+                <p className="text-xs text-slate-500 mt-1">Default tone; individual check-ins can override this</p>
+              </div>
+            </div>
+          </div>
         </>
       )}
 

@@ -918,6 +918,61 @@ app.put('/api/family/alerts/:alertId/read', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// ==============================
+// PHASE 7: Care Messages API
+// ==============================
+
+// GET messages for a patient
+app.get('/api/messages/:patientId', async (req, res) => {
+    if (!supabase) return res.status(500).json({ error: 'DB not configured' });
+    try {
+        const { data, error } = await supabase.from('care_messages').select('*')
+            .eq('patient_id', req.params.patientId)
+            .order('created_at', { ascending: true }).limit(100);
+        if (error) throw error;
+        res.json(data);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST message (caregiver → patient)
+app.post('/api/messages', async (req, res) => {
+    if (!supabase) return res.status(500).json({ error: 'DB not configured' });
+    const { patient_id, sender_name, message_text, message_type, is_urgent } = req.body;
+    if (!patient_id || !message_text) return res.status(400).json({ error: 'patient_id and message_text required' });
+    try {
+        const { data, error } = await supabase.from('care_messages').insert({
+            patient_id, sender_type: 'caregiver',
+            sender_name: sender_name || 'Caregiver',
+            message_text, message_type: message_type || 'text',
+            is_urgent: is_urgent || false,
+        }).select().single();
+        if (error) throw error;
+        res.json(data);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// PUT mark messages read (caregiver reading patient messages)
+app.put('/api/messages/:patientId/read', async (req, res) => {
+    if (!supabase) return res.status(500).json({ error: 'DB not configured' });
+    try {
+        const { error } = await supabase.from('care_messages').update({ is_read: true, read_at: new Date().toISOString() })
+            .eq('patient_id', req.params.patientId).eq('is_read', false).eq('sender_type', 'patient');
+        if (error) throw error;
+        res.json({ success: true });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// GET unread count for caregiver
+app.get('/api/messages/:patientId/unread', async (req, res) => {
+    if (!supabase) return res.status(500).json({ error: 'DB not configured' });
+    try {
+        const { count, error } = await supabase.from('care_messages').select('*', { count: 'exact', head: true })
+            .eq('patient_id', req.params.patientId).eq('is_read', false).eq('sender_type', 'patient');
+        if (error) throw error;
+        res.json({ unread: count || 0 });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 app.post('/api/trigger-call', async (req, res) => {
     if (!twilioClient) return res.status(500).json({ error: 'Twilio not configured' });
     const { phoneNumber } = req.body;

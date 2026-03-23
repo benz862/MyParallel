@@ -381,15 +381,12 @@ const WebTerminal: React.FC = () => {
               </div>
               <div className="overflow-x-auto pb-4">
                 {activeRightTab === 'schedule' ? (
-                  <>
                   <CaregiverCalendar
                     patientId={selectedPatientId}
                     themeColor={selectedPatientId ? PATIENT_COLORS[patients.findIndex(p => p.id === selectedPatientId) % PATIENT_COLORS.length] : undefined}
                   />
-                  <CareTaskManager patientId={selectedPatientId} />
-                  </>
                 ) : activeRightTab === 'care' && selectedPatientId ? (
-                  <DailyCareBoard patientId={selectedPatientId} />
+                  <CareTaskManager patientId={selectedPatientId} />
                 ) : activeRightTab === 'vitals' && selectedPatientId ? (
                   <VitalsTracker patientId={selectedPatientId} />
                 ) : activeRightTab === 'family' && selectedPatientId ? (

@@ -52,6 +52,8 @@ const CaregiverCalendar: React.FC<CaregiverCalendarProps> = ({ patientId, themeC
   const [repeatInterval, setRepeatInterval] = useState(1);
   const [repeatDays, setRepeatDays] = useState<string[]>([]);
   const [repeatEndDate, setRepeatEndDate] = useState('');
+  const [reminderMinutes, setReminderMinutes] = useState(0);
+  const [eventDate, setEventDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   
   useEffect(() => {
     fetchEvents();
@@ -139,7 +141,7 @@ const CaregiverCalendar: React.FC<CaregiverCalendarProps> = ({ patientId, themeC
     setError(null);
     
     try {
-        const dateStr = format(selectedDate, 'yyyy-MM-dd');
+        const dateStr = eventDate || format(selectedDate, 'yyyy-MM-dd');
         const startDateTime = new Date(`${dateStr}T${startTime}:00`).toISOString();
         const endDateTime = new Date(new Date(startDateTime).getTime() + 60 * 60 * 1000).toISOString();
         
@@ -148,6 +150,7 @@ const CaregiverCalendar: React.FC<CaregiverCalendarProps> = ({ patientId, themeC
             .insert([{
                 user_id: patientId, title, description,
                 start_time: startDateTime, end_time: endDateTime,
+                reminder_minutes: reminderMinutes,
                 repeat_type: repeatType,
                 repeat_interval: repeatType !== 'none' ? repeatInterval : 1,
                 repeat_days: repeatType === 'weekly' ? JSON.stringify(repeatDays) : JSON.stringify([]),
@@ -165,6 +168,7 @@ const CaregiverCalendar: React.FC<CaregiverCalendarProps> = ({ patientId, themeC
         setRepeatInterval(1);
         setRepeatDays([]);
         setRepeatEndDate('');
+        setReminderMinutes(0);
     } catch (err: any) {
         setError(err.message || 'Failed to add event');
     }
@@ -361,8 +365,26 @@ const CaregiverCalendar: React.FC<CaregiverCalendarProps> = ({ patientId, themeC
               </div>
               <div className="grid grid-cols-2 gap-4">
                  <div>
+                   <label className="block text-xs font-bold text-slate-500 mb-1 uppercase tracking-wider">Date</label>
+                   <input type="date" required value={eventDate} onChange={e => { setEventDate(e.target.value); setSelectedDate(new Date(e.target.value + 'T12:00:00')); }} className="w-full px-3 py-2 border border-slate-300 rounded focus:ring-1 focus:ring-wellness-blue" />
+                 </div>
+                 <div>
                    <label className="block text-xs font-bold text-slate-500 mb-1 uppercase tracking-wider">Check-in Time</label>
                    <input type="time" required value={startTime} onChange={e => setStartTime(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded focus:ring-1 focus:ring-wellness-blue" />
+                 </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                 <div>
+                   <label className="block text-xs font-bold text-slate-500 mb-1 uppercase tracking-wider">📞 Reminder Call</label>
+                   <select value={reminderMinutes} onChange={e => setReminderMinutes(parseInt(e.target.value))} className="w-full px-3 py-2 border border-slate-300 rounded focus:ring-1 focus:ring-wellness-blue">
+                     <option value={0}>No reminder</option>
+                     <option value={5}>5 min before</option>
+                     <option value={10}>10 min before</option>
+                     <option value={15}>15 min before</option>
+                     <option value={30}>30 min before</option>
+                     <option value={60}>1 hour before</option>
+                     <option value={120}>2 hours before</option>
+                   </select>
                  </div>
                  <div>
                    <label className="block text-xs font-bold text-slate-500 mb-1 uppercase tracking-wider">Repeat Pattern</label>

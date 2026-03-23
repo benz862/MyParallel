@@ -39,6 +39,7 @@ const CaregiverCalendar: React.FC<CaregiverCalendarProps> = ({ patientId, themeC
   const [editTitle, setEditTitle] = useState('');
   const [editDescription, setEditDescription] = useState('');
   const [editTime, setEditTime] = useState('');
+  const [editDate, setEditDate] = useState('');
   const [editReminder, setEditReminder] = useState(0);
 
   const [currentMonth, setCurrentMonth] = useState(new Date());
@@ -189,7 +190,8 @@ const CaregiverCalendar: React.FC<CaregiverCalendarProps> = ({ patientId, themeC
       setEditDescription(event.description);
       try {
         setEditTime(format(new Date(event.start_time), 'HH:mm'));
-      } catch { setEditTime('09:00'); }
+        setEditDate(format(new Date(event.start_time), 'yyyy-MM-dd'));
+      } catch { setEditTime('09:00'); setEditDate(format(new Date(), 'yyyy-MM-dd')); }
       setEditReminder((event as any).reminder_minutes || 0);
   };
 
@@ -198,7 +200,7 @@ const CaregiverCalendar: React.FC<CaregiverCalendarProps> = ({ patientId, themeC
       const event = events.find(e => e.id === editingEventId);
       if (!event) return;
       try {
-          const dateStr = format(new Date(event.start_time), 'yyyy-MM-dd');
+          const dateStr = editDate || format(new Date(event.start_time), 'yyyy-MM-dd');
           const newStart = new Date(`${dateStr}T${editTime}:00`).toISOString();
           const newEnd = new Date(new Date(newStart).getTime() + 60*60*1000).toISOString();
           const { error: updateError } = await supabase
@@ -500,17 +502,25 @@ const CaregiverCalendar: React.FC<CaregiverCalendarProps> = ({ patientId, themeC
                           </div>
                           <div className="grid grid-cols-2 gap-3">
                             <div>
+                              <label className="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wider">Date</label>
+                              <input type="date" value={editDate} onChange={e => setEditDate(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded text-sm focus:ring-1 focus:ring-wellness-blue" />
+                            </div>
+                            <div>
                               <label className="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wider">Time</label>
                               <input type="time" value={editTime} onChange={e => setEditTime(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded text-sm focus:ring-1 focus:ring-wellness-blue" />
                             </div>
+                          </div>
+                          <div className="grid grid-cols-2 gap-3">
                             <div>
-                              <label className="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wider">Reminder</label>
+                              <label className="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wider">📞 Reminder</label>
                               <select value={editReminder} onChange={e => setEditReminder(Number(e.target.value))} className="w-full px-3 py-2 border border-slate-300 rounded text-sm focus:ring-1 focus:ring-wellness-blue">
                                 <option value={0}>No reminder</option>
                                 <option value={5}>5 min before</option>
+                                <option value={10}>10 min before</option>
                                 <option value={15}>15 min before</option>
                                 <option value={30}>30 min before</option>
                                 <option value={60}>1 hour before</option>
+                                <option value={120}>2 hours before</option>
                               </select>
                             </div>
                           </div>

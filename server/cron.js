@@ -134,10 +134,10 @@ export function startScheduler() {
            if (shouldTrigger) {
                if (eventTimeStr === currentTimeStr) {
                    console.log(`[Cron] Triggering Voice Call for Event: ${event.title} to ${userNumber}`);
-                   await triggerOutboundVoiceCall(userNumber, `Calendar Event: ${event.title}`);
+                   await triggerOutboundVoiceCall(userNumber, `Calendar Event: ${event.title}`, event.call_tone || '');
                } else if (reminderTimeStr === currentTimeStr) {
                    console.log(`[Cron] Triggering ${reminderMinutes}-min Reminder CALL for: ${event.title} to ${userNumber}`);
-                   await triggerOutboundVoiceCall(userNumber, `Friendly Reminder: Your appointment "${event.title}" is in ${reminderMinutes} minutes.`);
+                   await triggerOutboundVoiceCall(userNumber, `Friendly Reminder: Your appointment "${event.title}" is in ${reminderMinutes} minutes.`, event.call_tone || '');
                 }
             }
             }
@@ -248,16 +248,15 @@ export function startScheduler() {
   });
 }
 
-async function triggerOutboundVoiceCall(userNumber, logReason) {
-  // Render provides RENDER_EXTERNAL_URL automatically (e.g. https://myparallel.onrender.com)
-  // NGROK_URL is only for local development
+async function triggerOutboundVoiceCall(userNumber, logReason, callTone) {
   const baseUrl = process.env.RENDER_EXTERNAL_URL || process.env.NGROK_URL;
   console.log(`[Cron Debug] RENDER_EXTERNAL_URL=${process.env.RENDER_EXTERNAL_URL || '(not set)'}, NGROK_URL=${process.env.NGROK_URL || '(not set)'}, resolved baseUrl=${baseUrl}`);
   if (!baseUrl) {
       console.error("[Cron] CRITICAL: Neither RENDER_EXTERNAL_URL nor NGROK_URL is set. Cannot trigger outbound calls.");
       return;
   }
-  const webhookUrl = `${baseUrl}/api/twilio/voice?callReason=${encodeURIComponent(logReason)}`;
+  let webhookUrl = `${baseUrl}/api/twilio/voice?callReason=${encodeURIComponent(logReason)}`;
+  if (callTone) webhookUrl += `&callTone=${encodeURIComponent(callTone)}`;
   console.log(`[Cron] Using webhook URL: ${webhookUrl}`);
 
   try {

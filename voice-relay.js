@@ -23,7 +23,19 @@ export function setupVoiceRelay(server, getContextCallback, saveMessageCallback,
           streamSid = msg.start.streamSid;
           activeUserNumber = msg.start.customParameters?.userNumber;
           const callReason = msg.start.customParameters?.callReason || '';
-          console.log(`[Proxy] Twilio Socket Started for userNumber: ${activeUserNumber}, callReason: ${callReason || '(none)'}`);
+          const callTone = msg.start.customParameters?.callTone || '';
+          console.log(`[Proxy] Twilio Socket Started for userNumber: ${activeUserNumber}, callReason: ${callReason || '(none)'}, callTone: ${callTone || '(default)'}`);
+
+          // Map call_tone key to behavioral instruction
+          const toneMap = {
+            warm_empathetic: 'Be warm, empathetic, and nurturing. Show genuine care and concern.',
+            cheerful_humorous: 'Be cheerful, upbeat, and sprinkle in light humor. Make the patient smile and laugh.',
+            calm_gentle: 'Be very calm, soft-spoken, and peaceful. Speak slowly and gently.',
+            direct_clinical: 'Be professional, direct, and factual. Get to the point concisely.',
+            playful_friendly: 'Be playful, enthusiastic, and friendly like a good buddy. Use casual language.',
+            motivational: 'Be motivational, encouraging, and upbeat. Celebrate small wins.',
+          };
+          const toneInstruction = callTone && toneMap[callTone] ? toneMap[callTone] : '';
 
           let contextString = "";
           let voiceId = "Puck";
@@ -87,7 +99,7 @@ export function setupVoiceRelay(server, getContextCallback, saveMessageCallback,
                 },
                 systemInstruction: {
                   parts: [{
-                    text: `You are MyParallel responding to a check-in phone call. Adopt this personality trait: ${emotionalTrait}. Keep responses extremely brief (1 short sentence max). Do not use filler formatting. 
+                    text: `You are MyParallel responding to a check-in phone call. ${toneInstruction || `Adopt this personality trait: ${emotionalTrait}.`} Keep responses extremely brief (1 short sentence max). Do not use filler formatting. 
 
 IMPORTANT: The current date and time is ${new Date().toLocaleString('en-US', { timeZone: userTimezone, dateStyle: 'full', timeStyle: 'short' })}. The user's timezone is ${userTimezone}. When scheduling appointments, ALWAYS use the user's local timezone. NEVER schedule in UTC.
               

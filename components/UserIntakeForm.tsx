@@ -378,6 +378,48 @@ const UserIntakeForm: React.FC<UserIntakeFormProps> = ({
                 <p className="text-xs text-slate-500 mt-1">Default tone; individual check-ins can override this</p>
               </div>
             </div>
+
+            {/* Voice Selection */}
+            <div className="mt-6">
+              <label className="block text-sm font-medium text-slate-700 mb-3">
+                🔊 Companion Voice
+              </label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {VOICE_PRESETS.map((voice) => (
+                  <div
+                    key={voice.id}
+                    onClick={() => setFormData(prev => ({ ...prev, voice_id: voice.id }))}
+                    className={`relative cursor-pointer rounded-xl border-2 p-4 transition-all ${
+                      (formData.voice_id || 'Puck') === voice.id
+                        ? 'border-wellness-blue bg-blue-50 shadow-md'
+                        : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-semibold text-slate-800">{voice.label}</span>
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">{voice.gender}</span>
+                    </div>
+                    <p className="text-xs text-slate-500 mb-2">{voice.desc}</p>
+                    <button
+                      type="button"
+                      onClick={(e) => playVoicePreview(voice.id, voice.label, e)}
+                      className={`text-xs px-3 py-1 rounded-full font-medium transition-colors ${
+                        playingVoice === voice.id
+                          ? 'bg-wellness-blue text-white'
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      }`}
+                    >
+                      {playingVoice === voice.id ? '🔊 Playing...' : '▶️ Preview'}
+                    </button>
+                    {(formData.voice_id || 'Puck') === voice.id && (
+                      <div className="absolute top-2 right-2 w-5 h-5 bg-wellness-blue rounded-full flex items-center justify-center">
+                        <span className="text-white text-xs">✓</span>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </>
       )}

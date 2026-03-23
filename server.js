@@ -1061,8 +1061,11 @@ app.post('/api/twilio/voice', async (req, res) => {
         const wsUrl = `wss://${host}/api/twilio/media`;
         console.log(`[Twilio Webhook] Host: ${host}, WS URL: ${wsUrl}`);
 
-        // We completely bypass `<Say>` and `<Gather>` entirely.
-        // Opening a raw bidirectional WebSockets audio pipe to the proxy.
+        // INSTANT GREETING — prevent dead silence while Gemini connects
+        twiml.say({ voice: 'Polly.Ruth-Neural' }, "Hi there, one moment while I connect.");
+        twiml.pause({ length: 1 });
+
+        // Now open the bidirectional WebSocket audio pipe
         const connect = twiml.connect();
         const stream = connect.stream({ url: wsUrl });
         stream.parameter({ name: 'userNumber', value: userNumber });

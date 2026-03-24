@@ -147,198 +147,164 @@ async function getUserProfileContext(phoneNumber) {
             }).join(', ');
         }
 
+        const tz = profile.timezone || 'America/New_York';
+        const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: tz });
+        const yesterday = new Date(Date.now() - 24*60*60*1000).toISOString();
+        const tomorrow = new Date(Date.now() + 2*24*60*60*1000).toISOString();
+        const dayStart = `${todayStr}T00:00:00.000Z`;
+        const dayEnd = `${todayStr}T23:59:59.999Z`;
+        const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+        const dayNames = ['sun','mon','tue','wed','thu','fri','sat'];
+        const todayDay = dayNames[new Date(todayStr + 'T12:00:00').getDay()];
+
+        // ══════ PARALLEL FETCH — all queries at once ══════
+        const [
+            calendarResult,
+            medsResult,
+            medScheduleResult,
+            careTasksResult,
+            contactsResult,
+            vitalsResult,
+            incidentsResult,
+            agencyResult,
+        ] = await Promise.all([
+            // 1. Calendar events
+            supabase.from('calendar_events').select('*').eq('user_id', profile.id)
+                .gte('start_time', yesterday).lte('start_time', tomorrow)
+                .order('start_time', { ascending: true }).then(r => r.data).catch(() => null),
+
+            // 2. Medications
+            new MedicationService(supabase).getPatientMedications(profile.id).catch(() => null),
+
+            // 3. Today's med schedule
+            supabase.from('medication_schedule_events').select('*').eq('patient_id', profile.id)
+                .is('invalidated_at', null).gte('scheduled_for', dayStart).lte('scheduled_for', dayEnd)
+                .order('scheduled_for', { ascending: true }).then(r => r.data).catch(() => null),
+
+            // 4. Care tasks
+            supabase.from('care_tasks').select('*').eq('patient_id', profile.id).eq('is_active', true)
+                .order('scheduled_time', { ascending: true }).then(r => r.data).catch(() => null),
+
+            // 5. Contacts
+            supabase.from('patient_contacts').select('*').eq('patient_id', profile.id)
+                .order('contact_type').order('name').then(r => r.data).catch(() => null),
+
+            // 6. Latest vitals
+            supabase.from('health_vitals_logs').select('*').eq('patient_id', profile.id)
+                .order('recorded_at', { ascending: false }).limit(1).single().then(r => r.data).catch(() => null),
+
+            // 7. Recent incidents
+            supabase.from('incidents').select('*').eq('patient_id', profile.id)
+                .gte('occurred_at', weekAgo).order('occurred_at', { ascending: false }).limit(5).then(r => r.data).catch(() => null),
+
+            // 8. Agency branding
+            profile.agency_id
+                ? supabase.from('agencies').select('call_company_name, call_greeting, call_system_instructions, company_name')
+                    .eq('id', profile.agency_id).maybeSingle().then(r => r.data).catch(() => null)
+                : Promise.resolve(null),
+        ]);
+
+        // ══════ Process results ══════
         let calendarContext = "None";
-        try {
-            const yesterday = new Date(Date.now() - 24*60*60*1000).toISOString();
-            const tomorrow = new Date(Date.now() + 2*24*60*60*1000).toISOString();
-            const { data: events } = await supabase
-                .from('calendar_events')
-                .select('*')
-                .eq('user_id', profile.id)
-                .gte('start_time', yesterday)
-                .lte('start_time', tomorrow)
-                .order('start_time', { ascending: true });
-                
-            if (events && events.length > 0) {
-                calendarContext = events.map(e => `- ${new Date(e.start_time).toLocaleString('en-US', {timeZone: profile.timezone || 'America/New_York'})}: ${e.title} (${e.description})`).join('\n');
-            }
-        } catch(err) { console.error('Failed fetching calendar context', err); }
+        if (calendarResult && calendarResult.length > 0) {
+            calendarContext = calendarResult.map(e => `- ${new Date(e.start_time).toLocaleString('en-US', {timeZone: tz})}: ${e.title} (${e.description})`).join('\n');
+        }
 
-        // Fetch medications using the SAME service the Meds tab UI uses
         let medicationContext = "None specified";
-        try {
-            const medServiceInstance = new MedicationService(supabase);
-            const medAssignments = await medServiceInstance.getPatientMedications(profile.id);
-            
-            console.log(`[VA Context] Medications for patient ${profile.preferred_name || profile.full_name} (${profile.id}): ${medAssignments?.length || 0} found:`, 
-                (medAssignments || []).map(a => a.medications_master?.name || 'UNNAMED').join(', '));
-            
-            if (medAssignments && medAssignments.length > 0) {
-                medicationContext = medAssignments.map(a => {
-                    const m = a.medications_master || {};
-                    const v = (a.patient_medication_versions || []).find(ver => ver.is_active) || a.patient_medication_versions?.[0];
-                    const strength = `${m.dosage_strength || ''} ${m.strength_unit || ''}`.trim();
-                    const freq = v?.frequency_type?.replace(/_/g, ' ') || '';
-                    const route = v?.route || '';
-                    const times = (v?.specific_times || []).join(', ');
-                    const instrSummary = v?.snapshot_instruction_summary || '';
-                    const status = a.status === 'on_hold' ? ' [ON HOLD]' : '';
-                    return `- ${m.name || 'Unknown'}${strength ? ' ' + strength : ''}${status}: ${freq}${route ? ' (' + route + ')' : ''}${times ? ' at ' + times : ''}${instrSummary ? ' | Instructions: ' + instrSummary : ''}`;
-                }).join('\n');
-            }
-            console.log(`[VA Context] Final medication context:\n${medicationContext}`);
-        } catch(err) { console.error('Failed fetching medication context', err); }
+        if (medsResult && medsResult.length > 0) {
+            medicationContext = medsResult.map(a => {
+                const m = a.medications_master || {};
+                const v = (a.patient_medication_versions || []).find(ver => ver.is_active) || a.patient_medication_versions?.[0];
+                const strength = `${m.dosage_strength || ''} ${m.strength_unit || ''}`.trim();
+                const freq = v?.frequency_type?.replace(/_/g, ' ') || '';
+                const route = v?.route || '';
+                const times = (v?.specific_times || []).join(', ');
+                const instrSummary = v?.snapshot_instruction_summary || '';
+                const status = a.status === 'on_hold' ? ' [ON HOLD]' : '';
+                return `- ${m.name || 'Unknown'}${strength ? ' ' + strength : ''}${status}: ${freq}${route ? ' (' + route + ')' : ''}${times ? ' at ' + times : ''}${instrSummary ? ' | Instructions: ' + instrSummary : ''}`;
+            }).join('\n');
+        }
 
-        // Fetch today's medication dose schedule
         let todayMedSchedule = "No doses scheduled today";
-        try {
-            const tz = profile.timezone || 'America/New_York';
-            const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: tz }); // YYYY-MM-DD
-            const dayStart = `${todayStr}T00:00:00.000Z`;
-            const dayEnd = `${todayStr}T23:59:59.999Z`;
-            const { data: doses } = await supabase
-                .from('medication_schedule_events')
-                .select('*')
-                .eq('patient_id', profile.id)
-                .is('invalidated_at', null)
-                .gte('scheduled_for', dayStart)
-                .lte('scheduled_for', dayEnd)
-                .order('scheduled_for', { ascending: true });
-            if (doses && doses.length > 0) {
-                todayMedSchedule = doses.map(d => {
-                    const time = new Date(d.scheduled_for).toLocaleTimeString('en-US', { timeZone: tz, hour: 'numeric', minute: '2-digit' });
-                    return `- ${time}: ${d.medication_name || 'medication'}${d.dose_text ? ' (' + d.dose_text + ')' : ''} — ${d.status.toUpperCase()}${d.instruction_summary ? ' | ' + d.instruction_summary : ''}`;
-                }).join('\n');
-            }
-        } catch(err) { console.error('Failed fetching today med schedule', err); }
+        if (medScheduleResult && medScheduleResult.length > 0) {
+            todayMedSchedule = medScheduleResult.map(d => {
+                const time = new Date(d.scheduled_for).toLocaleTimeString('en-US', { timeZone: tz, hour: 'numeric', minute: '2-digit' });
+                return `- ${time}: ${d.medication_name || 'medication'}${d.dose_text ? ' (' + d.dose_text + ')' : ''} — ${d.status.toUpperCase()}${d.instruction_summary ? ' | ' + d.instruction_summary : ''}`;
+            }).join('\n');
+        }
 
-        // Fetch today's care tasks with completion status
         let todayCareTasks = "No care tasks today";
-        try {
-            const tz = profile.timezone || 'America/New_York';
-            const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: tz });
-            const dayNames = ['sun','mon','tue','wed','thu','fri','sat'];
-            const todayDay = dayNames[new Date(todayStr + 'T12:00:00').getDay()];
-
-            const { data: tasks } = await supabase
-                .from('care_tasks')
-                .select('*')
-                .eq('patient_id', profile.id)
-                .eq('is_active', true)
-                .order('scheduled_time', { ascending: true });
-
-            if (tasks && tasks.length > 0) {
-                // Filter by active_days
-                const todayTasks = tasks.filter(t => {
-                    const days = t.active_days || ['mon','tue','wed','thu','fri','sat','sun'];
-                    return days.includes(todayDay);
-                });
-
-                if (todayTasks.length > 0) {
-                    // Fetch today's completions
+        if (careTasksResult && careTasksResult.length > 0) {
+            const todayTasks = careTasksResult.filter(t => {
+                const days = t.active_days || ['mon','tue','wed','thu','fri','sat','sun'];
+                return days.includes(todayDay);
+            });
+            if (todayTasks.length > 0) {
+                // Fetch completions (this is the only secondary query — fast)
+                let completedIds = new Set();
+                try {
                     const taskIds = todayTasks.map(t => t.id);
                     const { data: completions } = await supabase
-                        .from('care_task_completions')
-                        .select('task_id')
-                        .in('task_id', taskIds)
-                        .eq('completed_date', todayStr);
-                    const completedIds = new Set((completions || []).map(c => c.task_id));
-                    const done = todayTasks.filter(t => completedIds.has(t.id)).length;
-
-                    todayCareTasks = `${done}/${todayTasks.length} completed\n` + todayTasks.map(t => {
-                        const time = t.scheduled_time ? t.scheduled_time.substring(0, 5) : '';
-                        const status = completedIds.has(t.id) ? 'DONE ✓' : 'NOT DONE';
-                        const note = t.description ? ` (Caregiver note: "${t.description}")` : '';
-                        return `- ${time ? time + ': ' : ''}${t.title} — ${status}${note}`;
-                    }).join('\n');
-                }
-            }
-        } catch(err) { console.error('Failed fetching care tasks', err); }
-
-        // Fetch patient contacts directory (doctors, family, friends)
-        let contactsContext = "No contacts on file";
-        try {
-            const { data: contacts } = await supabase
-                .from('patient_contacts').select('*')
-                .eq('patient_id', profile.id).order('contact_type').order('name');
-            if (contacts && contacts.length > 0) {
-                const doctors = contacts.filter(c => c.contact_type === 'doctor');
-                const family = contacts.filter(c => c.contact_type === 'family');
-                const friends = contacts.filter(c => c.contact_type === 'friend');
-                const parts = [];
-                if (doctors.length) parts.push('DOCTORS:\n' + doctors.map(d =>
-                    `- Dr. ${d.name}${d.specialty ? ` (${d.specialty})` : ''}${d.clinic_name ? ` at ${d.clinic_name}` : ''}${d.phone ? ` — Phone: ${d.phone}` : ''}${d.notes ? ` [${d.notes}]` : ''}`
-                ).join('\n'));
-                if (family.length) parts.push('FAMILY:\n' + family.map(f =>
-                    `- ${f.name}${f.relationship ? ` (${f.relationship})` : ''}${f.phone ? ` — Phone: ${f.phone}` : ''}${f.notes ? ` [${f.notes}]` : ''}`
-                ).join('\n'));
-                if (friends.length) parts.push('FRIENDS:\n' + friends.map(f =>
-                    `- ${f.name}${f.relationship ? ` (${f.relationship})` : ''}${f.phone ? ` — Phone: ${f.phone}` : ''}${f.notes ? ` [${f.notes}]` : ''}`
-                ).join('\n'));
-                contactsContext = parts.join('\n');
-            }
-        } catch(err) { console.error('Failed fetching contacts', err); }
-
-        // Fetch latest vitals
-        let vitalsContext = "No recent vitals recorded";
-        try {
-            const { data: vital } = await supabase
-                .from('health_vitals_logs')
-                .select('*')
-                .eq('patient_id', profile.id)
-                .order('recorded_at', { ascending: false })
-                .limit(1)
-                .single();
-            if (vital) {
-                const vTime = new Date(vital.recorded_at).toLocaleString('en-US', { timeZone: profile.timezone || 'America/New_York' });
-                const parts = [];
-                if (vital.blood_pressure_systolic) parts.push(`BP: ${vital.blood_pressure_systolic}/${vital.blood_pressure_diastolic} mmHg`);
-                if (vital.heart_rate) parts.push(`HR: ${vital.heart_rate} bpm`);
-                if (vital.oxygen_saturation) parts.push(`O₂: ${vital.oxygen_saturation}%`);
-                if (vital.temperature) parts.push(`Temp: ${vital.temperature}°F`);
-                if (vital.weight) parts.push(`Weight: ${vital.weight} lbs`);
-                if (vital.blood_glucose) parts.push(`Glucose: ${vital.blood_glucose} mg/dL`);
-                if (vital.pain_level !== null && vital.pain_level !== undefined) parts.push(`Pain: ${vital.pain_level}/10`);
-                if (vital.mood_level !== null && vital.mood_level !== undefined) parts.push(`Mood: ${vital.mood_level}/10`);
-                if (vital.sleep_hours) parts.push(`Sleep: ${vital.sleep_hours} hrs`);
-                vitalsContext = `Last recorded: ${vTime}\n${parts.join(' | ')}${vital.notes ? '\nNotes: ' + vital.notes : ''}`;
-            }
-        } catch(err) { console.error('Failed fetching vitals', err); }
-
-        // Fetch recent incidents
-        let incidentContext = "No recent incidents";
-        try {
-            const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-            const { data: incidents } = await supabase
-                .from('incidents')
-                .select('*')
-                .eq('patient_id', profile.id)
-                .gte('occurred_at', weekAgo)
-                .order('occurred_at', { ascending: false })
-                .limit(5);
-            if (incidents && incidents.length > 0) {
-                incidentContext = incidents.map(i => {
-                    const time = new Date(i.occurred_at).toLocaleString('en-US', { timeZone: profile.timezone || 'America/New_York' });
-                    return `- ${time}: ${i.incident_type.replace(/_/g, ' ')} (${i.severity}) — ${i.title}${i.resolution_status !== 'resolved' ? ' [OPEN]' : ''}`;
+                        .from('care_task_completions').select('task_id')
+                        .in('task_id', taskIds).eq('completed_date', todayStr);
+                    completedIds = new Set((completions || []).map(c => c.task_id));
+                } catch(e) {}
+                const done = todayTasks.filter(t => completedIds.has(t.id)).length;
+                todayCareTasks = `${done}/${todayTasks.length} completed\n` + todayTasks.map(t => {
+                    const time = t.scheduled_time ? t.scheduled_time.substring(0, 5) : '';
+                    const status = completedIds.has(t.id) ? 'DONE ✓' : 'NOT DONE';
+                    const note = t.description ? ` (Caregiver note: "${t.description}")` : '';
+                    return `- ${time ? time + ': ' : ''}${t.title} — ${status}${note}`;
                 }).join('\n');
             }
-        } catch(err) { console.error('Failed fetching incidents', err); }
+        }
+
+        let contactsContext = "No contacts on file";
+        if (contactsResult && contactsResult.length > 0) {
+            const doctors = contactsResult.filter(c => c.contact_type === 'doctor');
+            const family = contactsResult.filter(c => c.contact_type === 'family');
+            const friends = contactsResult.filter(c => c.contact_type === 'friend');
+            const parts = [];
+            if (doctors.length) parts.push('DOCTORS:\n' + doctors.map(d =>
+                `- Dr. ${d.name}${d.specialty ? ` (${d.specialty})` : ''}${d.clinic_name ? ` at ${d.clinic_name}` : ''}${d.phone ? ` — Phone: ${d.phone}` : ''}${d.notes ? ` [${d.notes}]` : ''}`
+            ).join('\n'));
+            if (family.length) parts.push('FAMILY:\n' + family.map(f =>
+                `- ${f.name}${f.relationship ? ` (${f.relationship})` : ''}${f.phone ? ` — Phone: ${f.phone}` : ''}${f.notes ? ` [${f.notes}]` : ''}`
+            ).join('\n'));
+            if (friends.length) parts.push('FRIENDS:\n' + friends.map(f =>
+                `- ${f.name}${f.relationship ? ` (${f.relationship})` : ''}${f.phone ? ` — Phone: ${f.phone}` : ''}${f.notes ? ` [${f.notes}]` : ''}`
+            ).join('\n'));
+            contactsContext = parts.join('\n');
+        }
+
+        let vitalsContext = "No recent vitals recorded";
+        if (vitalsResult) {
+            const vTime = new Date(vitalsResult.recorded_at).toLocaleString('en-US', { timeZone: tz });
+            const parts = [];
+            if (vitalsResult.blood_pressure_systolic) parts.push(`BP: ${vitalsResult.blood_pressure_systolic}/${vitalsResult.blood_pressure_diastolic} mmHg`);
+            if (vitalsResult.heart_rate) parts.push(`HR: ${vitalsResult.heart_rate} bpm`);
+            if (vitalsResult.oxygen_saturation) parts.push(`O₂: ${vitalsResult.oxygen_saturation}%`);
+            if (vitalsResult.temperature) parts.push(`Temp: ${vitalsResult.temperature}°F`);
+            if (vitalsResult.weight) parts.push(`Weight: ${vitalsResult.weight} lbs`);
+            if (vitalsResult.blood_glucose) parts.push(`Glucose: ${vitalsResult.blood_glucose} mg/dL`);
+            if (vitalsResult.pain_level !== null && vitalsResult.pain_level !== undefined) parts.push(`Pain: ${vitalsResult.pain_level}/10`);
+            if (vitalsResult.mood_level !== null && vitalsResult.mood_level !== undefined) parts.push(`Mood: ${vitalsResult.mood_level}/10`);
+            if (vitalsResult.sleep_hours) parts.push(`Sleep: ${vitalsResult.sleep_hours} hrs`);
+            vitalsContext = `Last recorded: ${vTime}\n${parts.join(' | ')}${vitalsResult.notes ? '\nNotes: ' + vitalsResult.notes : ''}`;
+        }
+
+        let incidentContext = "No recent incidents";
+        if (incidentsResult && incidentsResult.length > 0) {
+            incidentContext = incidentsResult.map(i => {
+                const time = new Date(i.occurred_at).toLocaleString('en-US', { timeZone: tz });
+                return `- ${time}: ${i.incident_type.replace(/_/g, ' ')} (${i.severity}) — ${i.title}${i.resolution_status !== 'resolved' ? ' [OPEN]' : ''}`;
+            }).join('\n');
+        }
 
         const caregiverName = profile.caregiver_name || 'Not specified';
         const caregiverPhone = profile.caregiver_phone || 'Not available';
 
-        // White-label: check agency branding
-        let agencyBranding = null;
-        if (profile.agency_id) {
-            try {
-                const { data: agency } = await supabase
-                    .from('agencies')
-                    .select('call_company_name, call_greeting, call_system_instructions, company_name')
-                    .eq('id', profile.agency_id)
-                    .maybeSingle();
-                if (agency) agencyBranding = agency;
-            } catch(err) { console.error('Failed fetching agency branding', err); }
-        }
+        const agencyBranding = agencyResult;
 
         const companionName = agencyBranding?.call_company_name || profile.companion_name || 'MyParallel';
         const personalityKey = profile.companion_personality || 'warm_empathetic';

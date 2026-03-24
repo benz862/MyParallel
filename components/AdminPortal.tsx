@@ -164,7 +164,24 @@ const AdminPortal: React.FC<{ companyName: string, agencyId: string }> = ({ comp
 
   // ───── PATIENT REASSIGNMENT ─────
   const reassignPatient = async (patientId: string, caregiverId: string | null) => {
-    await supabase.from('user_profiles').update({ caregiver_id: caregiverId }).eq('id', patientId);
+    // Build the update payload with caregiver_id + legacy fields
+    const updateData: Record<string, any> = { caregiver_id: caregiverId };
+
+    if (caregiverId) {
+      // Look up the new caregiver's profile to sync legacy fields
+      const cg = caregivers.find(c => c.user_id === caregiverId);
+      if (cg?.user_profiles) {
+        updateData.caregiver_name = cg.user_profiles.full_name || null;
+        updateData.caregiver_phone = cg.user_profiles.phone_number || null;
+      }
+    } else {
+      // Unassigning — clear the legacy fields
+      updateData.caregiver_name = null;
+      updateData.caregiver_phone = null;
+      updateData.caregiver_email = null;
+    }
+
+    await supabase.from('user_profiles').update(updateData).eq('id', patientId);
     setAssigningPatient(null);
     fetchAgencyData();
   };

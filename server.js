@@ -326,7 +326,21 @@ async function getUserProfileContext(phoneNumber) {
 
         const caregiverName = profile.caregiver_name || 'Not specified';
         const caregiverPhone = profile.caregiver_phone || 'Not available';
-        const companionName = profile.companion_name || 'MyParallel';
+
+        // White-label: check agency branding
+        let agencyBranding = null;
+        if (profile.agency_id) {
+            try {
+                const { data: agency } = await supabase
+                    .from('agencies')
+                    .select('call_company_name, call_greeting, call_system_instructions, company_name')
+                    .eq('id', profile.agency_id)
+                    .maybeSingle();
+                if (agency) agencyBranding = agency;
+            } catch(err) { console.error('Failed fetching agency branding', err); }
+        }
+
+        const companionName = agencyBranding?.call_company_name || profile.companion_name || 'MyParallel';
         const personalityKey = profile.companion_personality || 'warm_empathetic';
         const personalityMap = {
             warm_empathetic: 'Be warm, empathetic, and nurturing. Show genuine care and concern. Use a gentle, reassuring tone.',
@@ -337,6 +351,16 @@ async function getUserProfileContext(phoneNumber) {
             motivational: 'Be motivational, encouraging, and upbeat. Celebrate small wins. Push the patient to stay positive and active.',
         };
         const personalityInstruction = personalityMap[personalityKey] || personalityMap.warm_empathetic;
+
+        // Build custom greeting instruction
+        const greetingInstruction = agencyBranding?.call_greeting
+            ? `- GREETING: When you first speak, say: "${agencyBranding.call_greeting}"`
+            : `- Your name is "${companionName}". When you greet the patient, introduce yourself as ${companionName}. Always refer to yourself as ${companionName}.`;
+
+        // Extra agency-wide instructions
+        const agencyInstructions = agencyBranding?.call_system_instructions
+            ? `\nAGENCY CUSTOM INSTRUCTIONS:\n${agencyBranding.call_system_instructions}\n`
+            : '';
 
         return {
           voiceId: profile.voice_id || 'Puck',
@@ -349,8 +373,9 @@ CRITICAL TEMPORAL CONTEXT:
 The current accurate local time for the user is: ${new Date().toLocaleString('en-US', { timeZone: profile.timezone || 'America/New_York' })}
 
 YOUR IDENTITY:
-- Your name is "${companionName}". When you greet the patient, introduce yourself as ${companionName}. Always refer to yourself as ${companionName}.
+${greetingInstruction}
 - PERSONALITY: ${personalityInstruction}
+${agencyInstructions}
 
 USER PROFILE CONTEXT:
 - Name: ${profile.preferred_name || profile.full_name || 'Unknown'}

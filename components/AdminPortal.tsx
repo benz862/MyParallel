@@ -13,7 +13,7 @@ interface CaregiverRow {
 
 const AdminPortal: React.FC<{ companyName: string, agencyId: string }> = ({ companyName, agencyId }) => {
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState<'caregivers' | 'patients'>('caregivers');
+  const [activeTab, setActiveTab] = useState<'caregivers' | 'patients' | 'settings'>('caregivers');
   const [caregivers, setCaregivers] = useState<CaregiverRow[]>([]);
   const [patients, setPatients] = useState<any[]>([]);
   const [entitlements, setEntitlements] = useState<any>(null);
@@ -42,6 +42,11 @@ const AdminPortal: React.FC<{ companyName: string, agencyId: string }> = ({ comp
   const [showAddPatient, setShowAddPatient] = useState(false);
   const [addPatientForm, setAddPatientForm] = useState({ full_name: '', phone_number: '', age: '', caregiver_id: '' });
   const [addingPatient, setAddingPatient] = useState(false);
+
+  // Branding / Settings
+  const [branding, setBranding] = useState({ call_company_name: '', call_greeting: '', call_system_instructions: '' });
+  const [savingBranding, setSavingBranding] = useState(false);
+  const [brandingSaved, setBrandingSaved] = useState(false);
 
   const apiBase = import.meta.env.VITE_API_URL || '';
 
@@ -81,6 +86,17 @@ const AdminPortal: React.FC<{ companyName: string, agencyId: string }> = ({ comp
 
     const { data: pts } = await supabase.from('user_profiles').select('*').eq('agency_id', agencyId);
     setPatients(pts || []);
+
+    // Fetch branding
+    const { data: agencyData } = await supabase.from('agencies').select('call_company_name, call_greeting, call_system_instructions').eq('id', agencyId).single();
+    if (agencyData) {
+      setBranding({
+        call_company_name: agencyData.call_company_name || '',
+        call_greeting: agencyData.call_greeting || '',
+        call_system_instructions: agencyData.call_system_instructions || '',
+      });
+    }
+
     setLoading(false);
   };
 
@@ -264,6 +280,12 @@ const AdminPortal: React.FC<{ companyName: string, agencyId: string }> = ({ comp
           className={`px-6 py-4 font-bold text-sm transition-colors border-b-2 ${activeTab === 'patients' ? 'border-sky-500 text-sky-600' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
         >
           🏥 Patient Network
+        </button>
+        <button
+          onClick={() => setActiveTab('settings')}
+          className={`px-6 py-4 font-bold text-sm transition-colors border-b-2 ${activeTab === 'settings' ? 'border-sky-500 text-sky-600' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+        >
+          ⚙️ Branding
         </button>
       </div>
 
@@ -457,6 +479,73 @@ const AdminPortal: React.FC<{ companyName: string, agencyId: string }> = ({ comp
                   <div className="text-slate-500 font-medium">No patients initialized</div>
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'settings' && (
+          <div className="space-y-6">
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+              <h2 className="text-xl font-bold text-slate-800 mb-1">White-Label Branding</h2>
+              <p className="text-sm text-slate-500 mb-6">Customize how the AI identifies itself when calling your patients</p>
+
+              <div className="space-y-5">
+                <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wide block mb-1">Call Display Name</label>
+                  <input
+                    value={branding.call_company_name}
+                    onChange={e => { setBranding(b => ({ ...b, call_company_name: e.target.value })); setBrandingSaved(false); }}
+                    className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-800 focus:ring-2 focus:ring-sky-500 focus:bg-white outline-none"
+                    placeholder="e.g. SkillBinder Care (defaults to MyParallel)"
+                  />
+                  <p className="text-xs text-slate-400 mt-1">The AI will introduce itself using this name instead of "MyParallel"</p>
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wide block mb-1">Custom Greeting</label>
+                  <textarea
+                    value={branding.call_greeting}
+                    onChange={e => { setBranding(b => ({ ...b, call_greeting: e.target.value })); setBrandingSaved(false); }}
+                    rows={3}
+                    className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-800 focus:ring-2 focus:ring-sky-500 focus:bg-white outline-none resize-none"
+                    placeholder='e.g. "Hello! This is your SkillBinder wellness companion calling to check in on you today."'
+                  />
+                  <p className="text-xs text-slate-400 mt-1">The exact opening line the AI will say when the patient picks up</p>
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wide block mb-1">Extra AI Instructions</label>
+                  <textarea
+                    value={branding.call_system_instructions}
+                    onChange={e => { setBranding(b => ({ ...b, call_system_instructions: e.target.value })); setBrandingSaved(false); }}
+                    rows={4}
+                    className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-800 focus:ring-2 focus:ring-sky-500 focus:bg-white outline-none resize-none"
+                    placeholder='e.g. "Always mention that the patient can reach their caregiver 24/7. End every call by reminding them to take their evening medication."'
+                  />
+                  <p className="text-xs text-slate-400 mt-1">Custom rules injected into every call for all patients in your agency</p>
+                </div>
+
+                <div className="flex items-center gap-4 pt-2">
+                  <button
+                    onClick={async () => {
+                      setSavingBranding(true);
+                      const { error } = await supabase.from('agencies').update({
+                        call_company_name: branding.call_company_name || null,
+                        call_greeting: branding.call_greeting || null,
+                        call_system_instructions: branding.call_system_instructions || null,
+                      }).eq('id', agencyId);
+                      setSavingBranding(false);
+                      if (error) { alert('Error: ' + error.message); return; }
+                      setBrandingSaved(true);
+                    }}
+                    disabled={savingBranding}
+                    className="px-8 py-3 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-800 transition-all shadow-lg disabled:opacity-50"
+                  >
+                    {savingBranding ? 'Saving...' : 'Save Branding'}
+                  </button>
+                  {brandingSaved && <span className="text-sm text-green-600 font-bold">✓ Saved! Changes take effect on the next call.</span>}
+                </div>
+              </div>
             </div>
           </div>
         )}

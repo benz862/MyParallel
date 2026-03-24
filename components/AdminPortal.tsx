@@ -38,6 +38,11 @@ const AdminPortal: React.FC<{ companyName: string, agencyId: string }> = ({ comp
   // Patient assignment
   const [assigningPatient, setAssigningPatient] = useState<string | null>(null);
 
+  // Add Patient modal
+  const [showAddPatient, setShowAddPatient] = useState(false);
+  const [addPatientForm, setAddPatientForm] = useState({ full_name: '', phone_number: '', age: '', caregiver_id: '' });
+  const [addingPatient, setAddingPatient] = useState(false);
+
   const apiBase = import.meta.env.VITE_API_URL || '';
 
   useEffect(() => { fetchAgencyData(); }, [agencyId]);
@@ -193,8 +198,35 @@ const AdminPortal: React.FC<{ companyName: string, agencyId: string }> = ({ comp
       setUpgradeType('patients');
       setShowUpgradeModal(true);
     } else {
-      alert("Opening Patient Intake Form (Integration Pending)");
+      setAddPatientForm({ full_name: '', phone_number: '', age: '', caregiver_id: '' });
+      setShowAddPatient(true);
     }
+  };
+
+  const submitAddPatient = async () => {
+    if (!addPatientForm.full_name.trim()) return;
+    setAddingPatient(true);
+    const payload: Record<string, any> = {
+      full_name: addPatientForm.full_name.trim(),
+      phone_number: addPatientForm.phone_number.trim() || null,
+      age: addPatientForm.age ? parseInt(addPatientForm.age) : null,
+      agency_id: agencyId,
+      caregiver_id: addPatientForm.caregiver_id || null,
+    };
+    // Sync legacy caregiver fields
+    if (addPatientForm.caregiver_id) {
+      const cg = caregivers.find(c => c.user_id === addPatientForm.caregiver_id);
+      if (cg?.user_profiles) {
+        payload.caregiver_name = cg.user_profiles.full_name || null;
+        payload.caregiver_phone = cg.user_profiles.phone_number || null;
+        payload.caregiver_email = cg.user_profiles.email || null;
+      }
+    }
+    const { error } = await supabase.from('user_profiles').insert(payload);
+    if (error) { alert('Error: ' + error.message); setAddingPatient(false); return; }
+    setShowAddPatient(false);
+    setAddingPatient(false);
+    fetchAgencyData();
   };
 
   if (loading) return <div className="p-12 text-center text-slate-500">Loading Configuration Engine...</div>;
@@ -581,6 +613,54 @@ const AdminPortal: React.FC<{ companyName: string, agencyId: string }> = ({ comp
                 className="w-full py-4 mt-3 bg-white text-slate-500 hover:text-slate-800 font-bold rounded-xl transition-colors">
                 Not Right Now
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ──── ADD PATIENT MODAL ──── */}
+      {showAddPatient && (
+        <div className="fixed inset-0 z-[200] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-lg w-full shadow-2xl relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-sky-400 to-blue-500"></div>
+            <button onClick={() => setShowAddPatient(false)} className="absolute top-5 right-5 w-8 h-8 flex items-center justify-center bg-slate-100 text-slate-500 rounded-full hover:bg-slate-200 font-bold">✕</button>
+            <div className="p-8">
+              <h2 className="text-2xl font-bold text-slate-800 mb-6">Add New Patient</h2>
+              <div className="space-y-4">
+                <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wide block mb-1">Full Name *</label>
+                  <input value={addPatientForm.full_name} onChange={e => setAddPatientForm(f => ({ ...f, full_name: e.target.value }))}
+                    className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-800 focus:ring-2 focus:ring-sky-500 focus:bg-white outline-none" placeholder="Patient's full name" />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wide block mb-1">Phone Number</label>
+                    <input type="tel" value={addPatientForm.phone_number} onChange={e => setAddPatientForm(f => ({ ...f, phone_number: e.target.value }))}
+                      className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-800 focus:ring-2 focus:ring-sky-500 focus:bg-white outline-none" placeholder="+1 555-123-4567" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wide block mb-1">Age</label>
+                    <input type="number" value={addPatientForm.age} onChange={e => setAddPatientForm(f => ({ ...f, age: e.target.value }))}
+                      className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-800 focus:ring-2 focus:ring-sky-500 focus:bg-white outline-none" placeholder="82" min="1" max="120" />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wide block mb-1">Assign Caregiver (optional)</label>
+                  <select value={addPatientForm.caregiver_id} onChange={e => setAddPatientForm(f => ({ ...f, caregiver_id: e.target.value }))}
+                    className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-800 focus:ring-2 focus:ring-sky-500 focus:bg-white outline-none">
+                    <option value="">Unassigned</option>
+                    {caregivers.filter(c => c.role === 'caregiver' && c.status === 'active').map(c => (
+                      <option key={c.user_id} value={c.user_id}>{c.user_profiles?.full_name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className="flex gap-3 mt-6">
+                <button onClick={() => setShowAddPatient(false)} className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200 transition-colors">Cancel</button>
+                <button onClick={submitAddPatient} disabled={addingPatient || !addPatientForm.full_name.trim()} className="flex-1 py-3 bg-sky-500 text-white rounded-xl font-bold hover:bg-sky-600 transition-colors disabled:opacity-50 shadow-lg">
+                  {addingPatient ? 'Creating...' : 'Add Patient'}
+                </button>
+              </div>
             </div>
           </div>
         </div>

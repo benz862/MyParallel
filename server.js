@@ -1829,6 +1829,7 @@ app.post('/api/admin/invite-caregiver', async (req, res) => {
             full_name,
             preferred_name: full_name.split(' ')[0],
             phone_number: phone_number || null,
+            email,
             agency_id,
         }, { onConflict: 'id' });
 

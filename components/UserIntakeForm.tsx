@@ -89,7 +89,7 @@ const UserIntakeForm: React.FC<UserIntakeFormProps> = ({
       if (initialData.caregiver_id) {
         supabase
           .from('user_profiles')
-          .select('full_name, phone_number')
+          .select('full_name, phone_number, email')
           .eq('id', initialData.caregiver_id)
           .maybeSingle()
           .then(({ data }) => {
@@ -98,6 +98,7 @@ const UserIntakeForm: React.FC<UserIntakeFormProps> = ({
                 ...prev,
                 caregiver_name: data.full_name || prev.caregiver_name,
                 caregiver_phone: data.phone_number || prev.caregiver_phone,
+                caregiver_email: data.email || prev.caregiver_email,
               }));
             }
           });

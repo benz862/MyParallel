@@ -60,7 +60,7 @@ const AdminPortal: React.FC<{ companyName: string, agencyId: string }> = ({ comp
     if (userIds.length > 0) {
       const { data: profiles } = await supabase
         .from('user_profiles')
-        .select('id, full_name, phone_number, headshot_url, bio, address_line1, city, state, zip_code, emergency_contact_name, emergency_contact_phone')
+        .select('id, full_name, phone_number, email, headshot_url, bio, address_line1, city, state, zip_code, emergency_contact_name, emergency_contact_phone')
         .in('id', userIds);
       if (profiles) {
         for (const p of profiles) { profileMap[p.id] = p; }
@@ -173,6 +173,7 @@ const AdminPortal: React.FC<{ companyName: string, agencyId: string }> = ({ comp
       if (cg?.user_profiles) {
         updateData.caregiver_name = cg.user_profiles.full_name || null;
         updateData.caregiver_phone = cg.user_profiles.phone_number || null;
+        updateData.caregiver_email = cg.user_profiles.email || null;
       }
     } else {
       // Unassigning — clear the legacy fields

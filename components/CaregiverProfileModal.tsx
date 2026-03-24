@@ -10,6 +10,10 @@ const CaregiverProfileModal: React.FC<CaregiverProfileModalProps> = ({ onClose }
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordMsg, setPasswordMsg] = useState<{type: 'success' | 'error', text: string} | null>(null);
+  const [changingPassword, setChangingPassword] = useState(false);
   
   const [profile, setProfile] = useState({
       full_name: '',
@@ -137,9 +141,57 @@ const CaregiverProfileModal: React.FC<CaregiverProfileModalProps> = ({ onClose }
                 </div>
                 <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
                     <p className="text-sm font-bold text-slate-700 mb-2">Account Authentication</p>
-                    <p className="text-xs text-slate-500 mb-3">Your primary login email is securely managed by Supabase Auth and strictly anchors your access.</p>
+                    <p className="text-xs text-slate-500 mb-3">Your login email is managed by Supabase Auth.</p>
                     <div className="px-3 py-2 bg-slate-200/50 rounded-lg text-sm text-slate-600 font-mono tracking-tight select-all">
                         {user?.email}
+                    </div>
+                </div>
+
+                {/* Password Change */}
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                    <p className="text-sm font-bold text-slate-700 mb-3">🔑 Change Password</p>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-500 mb-1">New Password</label>
+                        <input
+                          type="password"
+                          value={newPassword}
+                          onChange={(e) => { setNewPassword(e.target.value); setPasswordMsg(null); }}
+                          className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-sky-500 focus:bg-white transition-colors text-sm"
+                          placeholder="Enter new password (min 6 chars)"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-500 mb-1">Confirm Password</label>
+                        <input
+                          type="password"
+                          value={confirmPassword}
+                          onChange={(e) => { setConfirmPassword(e.target.value); setPasswordMsg(null); }}
+                          className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-sky-500 focus:bg-white transition-colors text-sm"
+                          placeholder="Confirm new password"
+                        />
+                      </div>
+                      {passwordMsg && (
+                        <div className={`p-2.5 rounded-lg text-xs font-medium ${passwordMsg.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}>
+                          {passwordMsg.text}
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        disabled={changingPassword || !newPassword}
+                        onClick={async () => {
+                          if (newPassword.length < 6) { setPasswordMsg({type: 'error', text: 'Password must be at least 6 characters'}); return; }
+                          if (newPassword !== confirmPassword) { setPasswordMsg({type: 'error', text: 'Passwords do not match'}); return; }
+                          setChangingPassword(true);
+                          const { error } = await supabase.auth.updateUser({ password: newPassword });
+                          setChangingPassword(false);
+                          if (error) { setPasswordMsg({type: 'error', text: error.message}); }
+                          else { setPasswordMsg({type: 'success', text: '✅ Password updated successfully!'}); setNewPassword(''); setConfirmPassword(''); }
+                        }}
+                        className="w-full py-2.5 bg-slate-800 text-white rounded-xl font-bold text-sm hover:bg-slate-700 transition-colors disabled:opacity-40"
+                      >
+                        {changingPassword ? 'Updating...' : 'Update Password'}
+                      </button>
                     </div>
                 </div>
               </form>

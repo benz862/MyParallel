@@ -57,18 +57,29 @@ const WebTerminal: React.FC = () => {
   const initialLoadRef = useRef<boolean>(true);
   const UPLINK_URL = import.meta.env.DEV ? 'http://localhost:8081' : '';
 
-  // Fetch all patients assigned to this caregiver (or the user themselves)
+  // Fetch patients assigned to this caregiver (exclude the caregiver's own profile)
   useEffect(() => {
     if (!user) return;
     const fetchProfiles = async () => {
-      const { data, error } = await supabase
+      // First try to get assigned patients
+      const { data: assigned } = await supabase
         .from('user_profiles')
         .select('*')
-        .or(`id.eq.${user.id},caregiver_id.eq.${user.id}`);
+        .eq('caregiver_id', user.id);
       
-      if (!error && data && data.length > 0) {
-        setPatients(data);
-        if (!selectedPatientId) setSelectedPatientId(data[0].id);
+      if (assigned && assigned.length > 0) {
+        setPatients(assigned);
+        if (!selectedPatientId) setSelectedPatientId(assigned[0].id);
+      } else {
+        // Fallback for independent caregivers: show their own profile (legacy behavior)
+        const { data: self } = await supabase
+          .from('user_profiles')
+          .select('*')
+          .eq('id', user.id);
+        if (self && self.length > 0) {
+          setPatients(self);
+          if (!selectedPatientId) setSelectedPatientId(self[0].id);
+        }
       }
     };
     fetchProfiles();

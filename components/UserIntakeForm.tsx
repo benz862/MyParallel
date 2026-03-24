@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { UserProfile } from "../types";
 import { VOICE_PRESETS } from '../constants';
+import { supabase } from '../utils/supabase';
 
 
 
@@ -47,6 +48,8 @@ const UserIntakeForm: React.FC<UserIntakeFormProps> = ({
   const [currentCondition, setCurrentCondition] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [playingVoice, setPlayingVoice] = useState<string | null>(null);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const photoRef = useRef<HTMLInputElement>(null);
 
   const playVoicePreview = async (voiceId: string, modelName: string, e: React.MouseEvent) => {
       e.preventDefault();
@@ -174,6 +177,39 @@ const UserIntakeForm: React.FC<UserIntakeFormProps> = ({
           {/* Basic Information */}
           <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-sm">
             <h3 className="text-xl sm:text-2xl font-semibold text-slate-900 mb-6">Basic Information</h3>
+            
+            {/* Headshot Upload */}
+            <div className="flex items-center gap-6 mb-6 pb-6 border-b border-slate-100">
+              <div className="relative group cursor-pointer" onClick={() => photoRef.current?.click()}>
+                {formData.headshot_url ? (
+                  <img src={formData.headshot_url} alt="Patient" className="w-20 h-20 rounded-full object-cover border-2 border-slate-200" />
+                ) : (
+                  <div className="w-20 h-20 rounded-full bg-slate-200 flex items-center justify-center text-3xl text-slate-400 border-2 border-slate-200">
+                    {(formData.full_name || '?')[0]?.toUpperCase()}
+                  </div>
+                )}
+                <div className="absolute inset-0 rounded-full bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                  <span className="text-white text-xs font-bold">{uploadingPhoto ? '...' : '📷'}</span>
+                </div>
+                <input ref={photoRef} type="file" accept="image/*" className="hidden" onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  setUploadingPhoto(true);
+                  const ext = file.name.split('.').pop() || 'jpg';
+                  const path = `headshots/patient_${Date.now()}.${ext}`;
+                  const { error } = await supabase.storage.from('parallel_files').upload(path, file, { upsert: true, contentType: file.type });
+                  if (error) { alert('Upload failed: ' + error.message); setUploadingPhoto(false); return; }
+                  const { data: { publicUrl } } = supabase.storage.from('parallel_files').getPublicUrl(path);
+                  setFormData(prev => ({ ...prev, headshot_url: publicUrl }));
+                  setUploadingPhoto(false);
+                }} />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-slate-700">Patient Photo</p>
+                <p className="text-xs text-slate-500">Click to upload a headshot</p>
+              </div>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-2">

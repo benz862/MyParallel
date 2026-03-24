@@ -106,5 +106,6 @@ export interface UserProfile {
   stripe_customer_id?: string | null;
   stripe_subscription_id?: string | null;
   stripe_features?: string[] | null;
+  headshot_url?: string | null;
   updated_at?: string;
 }

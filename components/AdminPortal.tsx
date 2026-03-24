@@ -56,11 +56,11 @@ const AdminPortal: React.FC<{ companyName: string, agencyId: string }> = ({ comp
 
     // Batch-fetch their profiles separately using user_ids
     const userIds = (rawUsers || []).map(u => u.user_id);
-    let profileMap: Record<string, { full_name: string; phone_number: string }> = {};
+    let profileMap: Record<string, any> = {};
     if (userIds.length > 0) {
       const { data: profiles } = await supabase
         .from('user_profiles')
-        .select('id, full_name, phone_number')
+        .select('id, full_name, phone_number, headshot_url, bio, address_line1, city, state, zip_code, emergency_contact_name, emergency_contact_phone')
         .in('id', userIds);
       if (profiles) {
         for (const p of profiles) { profileMap[p.id] = p; }
@@ -231,9 +231,13 @@ const AdminPortal: React.FC<{ companyName: string, agencyId: string }> = ({ comp
                   {teamMembers.map(m => (
                     <div key={m.id} className="flex items-center justify-between bg-white/10 rounded-xl px-4 py-3">
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-amber-500 flex items-center justify-center text-lg font-bold">
-                          {(m.user_profiles?.full_name || '?')[0]}
-                        </div>
+                        {m.user_profiles?.headshot_url ? (
+                          <img src={m.user_profiles.headshot_url} alt="" className="w-10 h-10 rounded-full object-cover" />
+                        ) : (
+                          <div className="w-10 h-10 rounded-full bg-amber-500 flex items-center justify-center text-lg font-bold">
+                            {(m.user_profiles?.full_name || '?')[0]}
+                          </div>
+                        )}
                         <div>
                           <div className="font-bold">{m.user_profiles?.full_name || 'Admin'}</div>
                           <div className="text-xs text-slate-300">{m.role.toUpperCase()} • {m.user_profiles?.phone_number || 'No phone'}</div>
@@ -267,9 +271,13 @@ const AdminPortal: React.FC<{ companyName: string, agencyId: string }> = ({ comp
                 <div key={cg.id} className="p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 hover:bg-slate-50 transition-colors">
                   <div className="flex items-center gap-4 flex-1">
                     <div className="relative">
-                      <div className="w-12 h-12 rounded-full bg-sky-100 text-sky-600 flex items-center justify-center text-lg font-bold">
-                        {(cg.user_profiles?.full_name || '?')[0]}
-                      </div>
+                      {cg.user_profiles?.headshot_url ? (
+                        <img src={cg.user_profiles.headshot_url} alt="" className="w-12 h-12 rounded-full object-cover" />
+                      ) : (
+                        <div className="w-12 h-12 rounded-full bg-sky-100 text-sky-600 flex items-center justify-center text-lg font-bold">
+                          {(cg.user_profiles?.full_name || '?')[0]}
+                        </div>
+                      )}
                       <div className={`absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full border-2 border-white ${cg.status === 'active' ? 'bg-green-500' : 'bg-red-400'}`} />
                     </div>
                     <div>
@@ -434,21 +442,63 @@ const AdminPortal: React.FC<{ companyName: string, agencyId: string }> = ({ comp
       {/* ──── EDIT CAREGIVER MODAL ──── */}
       {editingCg && (
         <div className="fixed inset-0 z-[200] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-lg w-full p-8 shadow-2xl relative">
-            <button onClick={() => setEditingCg(null)} className="absolute top-5 right-5 w-8 h-8 flex items-center justify-center bg-slate-100 text-slate-500 rounded-full hover:bg-slate-200 font-bold">✕</button>
-            <h2 className="text-2xl font-bold text-slate-800 mb-6">Edit Caregiver</h2>
+          <div className="bg-white rounded-3xl max-w-lg w-full shadow-2xl relative overflow-hidden max-h-[90vh] flex flex-col">
+            <button onClick={() => setEditingCg(null)} className="absolute top-5 right-5 z-10 w-8 h-8 flex items-center justify-center bg-slate-100 text-slate-500 rounded-full hover:bg-slate-200 font-bold">✕</button>
 
-            <div className="space-y-4">
+            {/* Header with headshot */}
+            <div className="bg-gradient-to-r from-slate-800 to-slate-900 p-6 text-white flex items-center gap-4">
+              {editingCg.user_profiles?.headshot_url ? (
+                <img src={editingCg.user_profiles.headshot_url} alt="" className="w-16 h-16 rounded-full object-cover border-2 border-white/30" />
+              ) : (
+                <div className="w-16 h-16 rounded-full bg-sky-500 flex items-center justify-center text-2xl font-bold border-2 border-white/30">
+                  {(editingCg.user_profiles?.full_name || '?')[0]}
+                </div>
+              )}
               <div>
-                <label className="text-xs font-bold text-slate-500 uppercase tracking-wide block mb-1">Full Name</label>
-                <input value={editForm.full_name} onChange={e => setEditForm(f => ({ ...f, full_name: e.target.value }))}
-                  className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-800 focus:ring-2 focus:ring-sky-500 focus:bg-white outline-none" />
+                <h2 className="text-xl font-bold">{editingCg.user_profiles?.full_name || 'Caregiver'}</h2>
+                <p className="text-sm text-slate-300">Caregiver Profile</p>
               </div>
-              <div>
-                <label className="text-xs font-bold text-slate-500 uppercase tracking-wide block mb-1">Phone Number</label>
-                <input value={editForm.phone_number} onChange={e => setEditForm(f => ({ ...f, phone_number: e.target.value }))}
-                  className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-800 focus:ring-2 focus:ring-sky-500 focus:bg-white outline-none" />
+            </div>
+
+            <div className="p-6 overflow-y-auto space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wide block mb-1">Full Name</label>
+                  <input value={editForm.full_name} onChange={e => setEditForm(f => ({ ...f, full_name: e.target.value }))}
+                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-slate-800 focus:ring-2 focus:ring-sky-500 focus:bg-white outline-none text-sm" />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wide block mb-1">Phone</label>
+                  <input value={editForm.phone_number} onChange={e => setEditForm(f => ({ ...f, phone_number: e.target.value }))}
+                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-slate-800 focus:ring-2 focus:ring-sky-500 focus:bg-white outline-none text-sm" />
+                </div>
               </div>
+
+              {/* Read-only info from their profile */}
+              {editingCg.user_profiles?.bio && (
+                <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wide block mb-1">Bio</label>
+                  <div className="px-4 py-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm text-slate-600">{editingCg.user_profiles.bio}</div>
+                </div>
+              )}
+              {(editingCg.user_profiles?.address_line1 || editingCg.user_profiles?.city) && (
+                <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wide block mb-1">📍 Address</label>
+                  <div className="px-4 py-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm text-slate-600">
+                    {editingCg.user_profiles.address_line1 && <div>{editingCg.user_profiles.address_line1}</div>}
+                    {editingCg.user_profiles.city && <div>{editingCg.user_profiles.city}{editingCg.user_profiles.state ? `, ${editingCg.user_profiles.state}` : ''} {editingCg.user_profiles.zip_code || ''}</div>}
+                  </div>
+                </div>
+              )}
+              {editingCg.user_profiles?.emergency_contact_name && (
+                <div>
+                  <label className="text-xs font-bold text-slate-500 uppercase tracking-wide block mb-1">🚨 Emergency Contact</label>
+                  <div className="px-4 py-2.5 bg-slate-50 rounded-xl border border-slate-200 text-sm text-slate-600">
+                    {editingCg.user_profiles.emergency_contact_name} — {editingCg.user_profiles.emergency_contact_phone || 'No phone'}
+                  </div>
+                </div>
+              )}
+
               <div>
                 <label className="text-xs font-bold text-slate-500 uppercase tracking-wide block mb-1">Assigned Patients</label>
                 <div className="bg-slate-50 rounded-xl border border-slate-200 p-3">
@@ -462,7 +512,7 @@ const AdminPortal: React.FC<{ companyName: string, agencyId: string }> = ({ comp
               </div>
             </div>
 
-            <div className="flex gap-3 mt-6">
+            <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex gap-3">
               <button onClick={() => setEditingCg(null)} className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200 transition-colors">Cancel</button>
               <button onClick={saveEdit} disabled={saving} className="flex-1 py-3 bg-sky-500 text-white rounded-xl font-bold hover:bg-sky-600 transition-colors disabled:opacity-50 shadow-lg">
                 {saving ? 'Saving...' : 'Save Changes'}

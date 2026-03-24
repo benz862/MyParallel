@@ -14,6 +14,7 @@ import IncidentLogger from './IncidentLogger';
 import CareMessageFeed from './CareMessageFeed';
 import BulkPatientUploader from './BulkPatientUploader';
 import UserIntakeForm from './UserIntakeForm';
+import { playSentSound, playReceivedSound } from '../utils/sounds';
 
 interface ChatMessage {
   sender: 'user' | 'ai' | 'system';
@@ -52,6 +53,8 @@ const WebTerminal: React.FC = () => {
   const [activeRightTab, setActiveRightTab] = useState<'schedule' | 'medications' | 'care' | 'vitals' | 'incidents' | 'messages' | 'family'>('schedule');
 
   const scrollRef = useRef<HTMLDivElement>(null);
+  const prevMsgCountRef = useRef<number>(0);
+  const initialLoadRef = useRef<boolean>(true);
   const UPLINK_URL = import.meta.env.DEV ? 'http://localhost:8081' : '';
 
   // Fetch all patients assigned to this caregiver (or the user themselves)
@@ -118,6 +121,14 @@ const WebTerminal: React.FC = () => {
                         time: new Date(m.created_at + (m.created_at.endsWith("Z") ? "" : "Z")).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
                         mediaUrl: m.media_url
                     }));
+                    // Play received sound if new messages arrived (skip initial load)
+                    if (!initialLoadRef.current && dbMessages.length > prevMsgCountRef.current) {
+                      const newMsgs = dbMessages.slice(prevMsgCountRef.current);
+                      const hasIncoming = newMsgs.some((m: ChatMessage) => m.sender !== 'user');
+                      if (hasIncoming) playReceivedSound();
+                    }
+                    initialLoadRef.current = false;
+                    prevMsgCountRef.current = dbMessages.length;
                     setMessages(dbMessages);
                 }
             }
@@ -159,10 +170,13 @@ const WebTerminal: React.FC = () => {
 
         const data = await res.json();
         
+        playSentSound();
         if (data.reply) {
             const aiMsg: ChatMessage = { sender: 'ai', text: data.reply, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) };
             // Optional: The background poll will pick it up anyway, but we can optimistically append.
             setMessages(prev => [...prev, aiMsg]);
+            prevMsgCountRef.current += 1; // Prevent double-play from poll
+            playReceivedSound();
         }
     } catch (err) { 
         console.error('Failed to send message:', err); 

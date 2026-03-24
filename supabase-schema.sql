@@ -60,6 +60,7 @@ ALTER TABLE calendar_events ADD COLUMN IF NOT EXISTS repeat_end_date TIMESTAMP W
 ALTER TABLE user_profiles ENABLE ROW LEVEL SECURITY;
 
 -- Create policy to allow all operations (can be locked down later)
+DROP POLICY IF EXISTS "allow_all" ON user_profiles;
 CREATE POLICY "allow_all" ON user_profiles
   FOR ALL
   USING (true)
@@ -78,6 +79,7 @@ END;
 $$ language 'plpgsql';
 
 -- Create trigger to automatically update updated_at
+DROP TRIGGER IF EXISTS update_user_profiles_updated_at ON user_profiles;
 CREATE TRIGGER update_user_profiles_updated_at BEFORE UPDATE ON user_profiles
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
@@ -129,6 +131,7 @@ ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS agency_id UUID REFERENCES age
 ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS caregiver_id UUID REFERENCES auth.users(id) ON DELETE SET NULL;
 
 -- Create policy to allow all operations (can be locked down later)
+DROP POLICY IF EXISTS "allow_all" ON resource_deliveries;
 CREATE POLICY "allow_all" ON resource_deliveries
   FOR ALL
   USING (true)

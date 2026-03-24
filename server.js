@@ -1802,6 +1802,54 @@ app.get('/api/calendar/:userId/feed.ics', async (req, res) => {
     }
 });
 
+
+// --- ADMIN: INVITE CAREGIVER ---
+app.post('/api/admin/invite-caregiver', async (req, res) => {
+    try {
+        const { agency_id, email, password, full_name, phone_number } = req.body;
+        if (!agency_id || !email || !full_name) return res.status(400).json({ error: 'agency_id, email, and full_name are required' });
+
+        // 1. Create auth user
+        const { data: authData, error: authErr } = await supabase.auth.admin.createUser({
+            email,
+            password: password || 'Welcome123!',
+            email_confirm: true,
+        });
+        if (authErr) {
+            if (authErr.message.includes('already')) {
+                return res.status(409).json({ error: 'A user with this email already exists. Please use a different email.' });
+            }
+            return res.status(400).json({ error: authErr.message });
+        }
+        const userId = authData.user.id;
+
+        // 2. Create user profile
+        await supabase.from('user_profiles').upsert({
+            id: userId,
+            full_name,
+            preferred_name: full_name.split(' ')[0],
+            phone_number: phone_number || null,
+            agency_id,
+        }, { onConflict: 'id' });
+
+        // 3. Create agency_users link as caregiver
+        const { error: linkErr } = await supabase.from('agency_users').insert({
+            agency_id,
+            user_id: userId,
+            role: 'caregiver',
+            status: 'active',
+        });
+        if (linkErr) {
+            return res.status(400).json({ error: linkErr.message });
+        }
+
+        res.json({ success: true, user_id: userId, message: `${full_name} has been added as a caregiver.` });
+    } catch (err) {
+        console.error('Invite caregiver error:', err);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
 startScheduler();
 // --- UNIFIED FRONTEND HOSTING (MONOLITH) ---
 // Serve the compiled Vite Single Page Application directly from the native filesystem

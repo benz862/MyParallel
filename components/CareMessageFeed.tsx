@@ -1,4 +1,6 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { supabase } from '../utils/supabase';
+import { playSentSound, playReceivedSound } from '../utils/sounds';
 
 interface Message {
   id: string;
@@ -18,41 +20,89 @@ export default function CareMessageFeed({ patientId }: { patientId: string }) {
   const [sending, setSending] = useState(false);
   const [unread, setUnread] = useState(0);
   const endRef = useRef<HTMLDivElement>(null);
+  const prevMsgCountRef = useRef<number>(0);
+  const initialLoadRef = useRef<boolean>(true);
+  const justSentRef = useRef<boolean>(false);
   const apiBase = import.meta.env.VITE_API_URL || '';
 
+  // Stable reference to loadMessages that always uses the latest patientId
+  const patientIdRef = useRef(patientId);
+  patientIdRef.current = patientId;
+
+  const loadMessages = useCallback(async () => {
+    const pid = patientIdRef.current;
+    if (!pid) return;
+    try {
+      const [msgRes, unreadRes] = await Promise.all([
+        fetch(`${apiBase}/api/messages/${pid}`),
+        fetch(`${apiBase}/api/messages/${pid}/unread`),
+      ]);
+      if (msgRes.ok) {
+        const newMessages: Message[] = await msgRes.json();
+        // Play received sound when new non-caregiver messages arrive (skip initial load and own sends)
+        if (!initialLoadRef.current && !justSentRef.current && newMessages.length > prevMsgCountRef.current) {
+          const incoming = newMessages.slice(prevMsgCountRef.current);
+          const hasPatientMsg = incoming.some(m => m.sender_type !== 'caregiver' && m.sender_type !== 'system');
+          if (hasPatientMsg) playReceivedSound();
+        }
+        justSentRef.current = false;
+        initialLoadRef.current = false;
+        prevMsgCountRef.current = newMessages.length;
+        setMessages(newMessages);
+      }
+      if (unreadRes.ok) { const d = await unreadRes.json(); setUnread(d.unread || 0); }
+    } catch (err) { console.error(err); }
+    finally { setLoading(false); }
+  }, [apiBase]);
+
+  // Reset refs when patient changes
+  useEffect(() => {
+    initialLoadRef.current = true;
+    prevMsgCountRef.current = 0;
+    justSentRef.current = false;
+    setMessages([]);
+    setLoading(true);
+  }, [patientId]);
+
+  // Poll every 5 seconds
   useEffect(() => {
     if (!patientId) return;
     loadMessages();
     const interval = setInterval(loadMessages, 5000);
     return () => clearInterval(interval);
-  }, [patientId]);
+  }, [patientId, loadMessages]);
+
+  // Supabase Realtime: instant refresh when a new message is inserted for this patient
+  useEffect(() => {
+    if (!patientId) return;
+    const channel = supabase.channel(`care-msg-feed-${patientId}`)
+      .on('postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'care_messages', filter: `patient_id=eq.${patientId}` },
+        () => { loadMessages(); }
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [patientId, loadMessages]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const loadMessages = async () => {
-    try {
-      const [msgRes, unreadRes] = await Promise.all([
-        fetch(`${apiBase}/api/messages/${patientId}`),
-        fetch(`${apiBase}/api/messages/${patientId}/unread`),
-      ]);
-      if (msgRes.ok) setMessages(await msgRes.json());
-      if (unreadRes.ok) { const d = await unreadRes.json(); setUnread(d.unread || 0); }
-    } catch (err) { console.error(err); }
-    finally { setLoading(false); }
-  };
-
   const sendMessage = async () => {
     if (!msgText.trim()) return;
     setSending(true);
     try {
-      await fetch(`${apiBase}/api/messages`, {
+      const res = await fetch(`${apiBase}/api/messages`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ patient_id: patientId, sender_name: 'Caregiver', message_text: msgText.trim() }),
       });
-      setMsgText('');
-      loadMessages();
+      if (res.ok) {
+        playSentSound();
+        justSentRef.current = true;
+        prevMsgCountRef.current += 1; // Prevent double-play from poll
+        setMsgText('');
+        loadMessages();
+      }
     } catch (err) { console.error(err); }
     finally { setSending(false); }
   };

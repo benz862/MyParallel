@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { supabase } from '../utils/supabase';
 import { VoiceDemo } from './VoiceDemo';
+import { playSentSound, playReceivedSound } from '../utils/sounds';
 
 type Tab = 'home' | 'meds' | 'tasks' | 'messages';
 
@@ -28,6 +29,9 @@ export const PatientPortal: React.FC = () => {
     const [sendingMsg, setSendingMsg] = useState(false);
     const [patientContext, setPatientContext] = useState('');
     const msgEndRef = useRef<HTMLDivElement>(null);
+    const prevMsgCountRef = useRef<number>(0);
+    const initialMsgLoadRef = useRef<boolean>(true);
+    const justSentRef = useRef<boolean>(false);
     const UPLINK = import.meta.env.DEV ? 'http://localhost:8081' : '';
 
     useEffect(() => {
@@ -44,19 +48,45 @@ export const PatientPortal: React.FC = () => {
 
     useEffect(() => {
         if (patient?.id) {
+            // Reset message tracking refs on patient change
+            initialMsgLoadRef.current = true;
+            prevMsgCountRef.current = 0;
+            justSentRef.current = false;
+
             loadData();
             // Fetch voice context from server (same as phone call context)
             fetch(`${UPLINK}/api/patient-context/${patient.id}`)
                 .then(r => r.json())
                 .then(ctx => { if (ctx.contextString) setPatientContext(ctx.contextString); })
                 .catch(err => console.error('Failed to load patient context:', err));
+            // Full data refresh every 30s
             const interval = setInterval(loadData, 30000);
-            // Realtime message subscription
+            // Fast message-only poll every 5s for near-realtime chat
+            const msgPoll = setInterval(async () => {
+                try {
+                    const res = await fetch(`${UPLINK}/api/messages/${patient.id}`);
+                    if (res.ok) {
+                        const msgs = await res.json();
+                        if (Array.isArray(msgs)) {
+                            // Play received sound for new incoming messages
+                            if (!initialMsgLoadRef.current && !justSentRef.current && msgs.length > prevMsgCountRef.current) {
+                                const incoming = msgs.slice(prevMsgCountRef.current);
+                                if (incoming.some((m: any) => m.sender_type !== 'patient')) playReceivedSound();
+                            }
+                            justSentRef.current = false;
+                            initialMsgLoadRef.current = false;
+                            prevMsgCountRef.current = msgs.length;
+                            setData(prev => ({ ...prev, messages: msgs, unreadCount: msgs.filter((m: any) => !m.is_read && m.sender_type !== 'patient').length }));
+                        }
+                    }
+                } catch {} 
+            }, 5000);
+            // Realtime message subscription for instant delivery
             const sub = supabase.channel(`patient-msg-${patient.id}`)
                 .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'care_messages', filter: `patient_id=eq.${patient.id}` },
                     () => loadData())
                 .subscribe();
-            return () => { clearInterval(interval); sub.unsubscribe(); };
+            return () => { clearInterval(interval); clearInterval(msgPoll); supabase.removeChannel(sub); };
         }
     }, [patient?.id]);
 
@@ -102,7 +132,7 @@ export const PatientPortal: React.FC = () => {
         if (!msgText.trim() || !patient?.id) return;
         setSendingMsg(true);
         try {
-            await fetch(`${UPLINK}/api/messages`, {
+            const res = await fetch(`${UPLINK}/api/messages`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     patient_id: patient.id,
@@ -112,6 +142,11 @@ export const PatientPortal: React.FC = () => {
                     message_type: 'text',
                 }),
             });
+            if (res.ok) {
+                playSentSound();
+                justSentRef.current = true;
+                prevMsgCountRef.current += 1;
+            }
             setMsgText('');
             loadData();
         } catch (err) { console.error(err); }

@@ -334,12 +334,21 @@ const WebTerminal: React.FC = () => {
                    const isActive = selectedPatientId === p.id;
                    return (
                    <div key={p.id} onClick={() => setSelectedPatientId(p.id)} className={`p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between cursor-pointer transition-all gap-4 border-l-8 ${isActive ? colorTheme.activeBg + ' ' + colorTheme.border : 'bg-white border-transparent hover:bg-slate-50 border-l-4 hover:' + colorTheme.border}`}>
-                       <div className="flex-1">
-                           <div className={`font-bold text-lg ${isActive ? colorTheme.text : 'text-slate-800'}`}>{p.full_name || 'Unnamed'}</div>
-                           <div className={`text-xs flex items-center gap-2 mt-1 ${isActive ? colorTheme.text : 'text-slate-500'}`}>
-                               <span>📞 {p.phone_number || 'No Phone'}</span>
-                           </div>
-                       </div>
+                        <div className="flex items-center gap-3 flex-1">
+                            {p.headshot_url ? (
+                              <img src={p.headshot_url} alt="" className={`w-11 h-11 rounded-full object-cover border-2 flex-shrink-0 ${isActive ? colorTheme.border : 'border-slate-200'}`} />
+                            ) : (
+                              <div className={`w-11 h-11 rounded-full flex items-center justify-center text-lg font-bold flex-shrink-0 ${isActive ? colorTheme.lightBg + ' ' + colorTheme.text + ' ' + colorTheme.border : 'bg-slate-100 text-slate-400'} border-2`}>
+                                {(p.full_name || '?')[0]}
+                              </div>
+                            )}
+                            <div>
+                              <div className={`font-bold text-lg ${isActive ? colorTheme.text : 'text-slate-800'}`}>{p.full_name || 'Unnamed'}</div>
+                              <div className={`text-xs flex items-center gap-2 mt-1 ${isActive ? colorTheme.text : 'text-slate-500'}`}>
+                                <span>📞 {p.phone_number || 'No Phone'}</span>
+                              </div>
+                            </div>
+                        </div>
                        <div className="flex items-center gap-3 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
                            <button 
                                onClick={(e) => { e.stopPropagation(); setEditingPatientId(p.id); setShowIntake(true); }} 

@@ -84,6 +84,24 @@ const UserIntakeForm: React.FC<UserIntakeFormProps> = ({
       setFormData({
         ...initialData,
       });
+
+      // If patient has an assigned caregiver_id, auto-populate the legacy caregiver fields
+      if (initialData.caregiver_id) {
+        supabase
+          .from('user_profiles')
+          .select('full_name, phone_number')
+          .eq('id', initialData.caregiver_id)
+          .maybeSingle()
+          .then(({ data }) => {
+            if (data) {
+              setFormData(prev => ({
+                ...prev,
+                caregiver_name: data.full_name || prev.caregiver_name,
+                caregiver_phone: data.phone_number || prev.caregiver_phone,
+              }));
+            }
+          });
+      }
     }
   }, [initialData]);
 
